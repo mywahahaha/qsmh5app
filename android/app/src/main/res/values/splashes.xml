@@ -1,0 +1,4 @@
+<resources>
+    <!-- 出包工具会将本数组替换为用户所选闪图的 drawable 引用。 -->
+    <array name="qsm_splash_images" />
+</resources>

@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.QishimengGame.Base" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+    <style name="Theme.QishimengGame" parent="Theme.QishimengGame.Base" />
+</resources>

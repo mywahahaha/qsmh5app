@@ -1,0 +1,28 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <com.qishimeng.game.auth.OnekeyHeaderView
+        android:id="@+id/onekey_header"
+        android:layout_width="match_parent"
+        android:layout_height="43.7dp">
+        <ImageView
+            android:layout_width="90dp"
+            android:layout_height="30dp"
+            android:layout_marginStart="10dp"
+            android:layout_marginTop="2.25dp"
+            android:src="@drawable/box_logo"
+            android:scaleType="fitCenter"
+            android:contentDescription="骑士盟游戏盒子" />
+        <ImageButton
+            android:id="@+id/onekey_close"
+            android:layout_width="34dp"
+            android:layout_height="30dp"
+            android:layout_marginTop="2.25dp"
+            android:layout_gravity="end|top"
+            android:background="@android:color/transparent"
+            android:padding="10dp"
+            android:src="@drawable/onekey_close"
+            android:scaleType="fitCenter"
+            android:contentDescription="关闭一键登录" />
+    </com.qishimeng.game.auth.OnekeyHeaderView>
+</FrameLayout>

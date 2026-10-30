@@ -1,0 +1,12 @@
+{
+  "game_id": 29,
+  "game_version": "1.0.1",
+  "application_name": "全民红月",
+  "application_id": "com.un74meng.yjhcmc",
+  "keystore_path": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\安卓通用证书\\qsmeng.jks",
+  "key_alias": "Qsmeng",
+  "icon_path": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\全民红月\\icon.png",
+  "splash_dir": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\通用闪图\\横版",
+  "output_dir": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\全民红月\\build",
+  "orientation": "landscape"
+}

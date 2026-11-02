@@ -31,8 +31,8 @@ data class FloatingBallConfig(
     val height: Int,
     val left: Int?,
     val right: Int?,
-    val top: Int?,
-    val bottom: Int?
+    val top: Double?,
+    val bottom: Double?
 )
 
 data class PageSpec(

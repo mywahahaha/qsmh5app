@@ -84,6 +84,7 @@ object InitConfigParser {
         val width = requiredInt("width")
         val height = requiredInt("height")
         if (width <= 0 || height <= 0) throw IllegalArgumentException("floatball 尺寸无效")
+        val top = optionalFloatingBallOffset("top")
         return FloatingBallConfig(
             show = optionalBoolean("show") ?: false,
             imageDefault = requiredString("image_default"),
@@ -92,9 +93,19 @@ object InitConfigParser {
             height = height,
             left = optionalInt("left"),
             right = optionalInt("right"),
-            top = optionalInt("top"),
-            bottom = optionalInt("bottom")
+            top = top,
+            bottom = if (top == null) optionalFloatingBallOffset("bottom") else null
         )
+    }
+
+    private fun JsonObject.optionalFloatingBallOffset(name: String): Double? {
+        val element = get(name) ?: return null
+        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isNumber) {
+            throw IllegalArgumentException("字段 floatball.$name 类型错误")
+        }
+        val value = element.asDouble
+        if (!value.isFinite() || value < 0) throw IllegalArgumentException("字段 floatball.$name 必须为非负有限数值")
+        return value
     }
 
     private fun JsonObject.requiredObject(name: String): JsonObject = get(name)?.takeIf { it.isJsonObject }?.asJsonObject

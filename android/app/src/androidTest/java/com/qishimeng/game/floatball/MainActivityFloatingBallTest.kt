@@ -57,7 +57,8 @@ class MainActivityFloatingBallTest {
     private val gameRequested = CountDownLatch(1)
     private val releaseGame = CountDownLatch(1)
     private var initiallyShown = true
-    private var ballBottom = 20
+    private var ballTop: Double? = null
+    private var ballBottom: Number = 20
     private var ballSize = 36
     private var launched = false
     private var onekeyEnabled = false
@@ -381,18 +382,60 @@ class MainActivityFloatingBallTest {
             val host = image.parent as ViewGroup
             assertTrue("回归场景必须为横屏", host.width > host.height)
             assertBallInsideHost(image, host)
+            val bottomPx = 200.0 * activityRule.activity.resources.displayMetrics.density
+            val expectedTop = (host.height - image.height - bottomPx).coerceAtLeast(0.0).toInt()
+            assertEquals("bottom=200 应按 200dp 间距布局，空间不足时限制在可见范围", expectedTop, image.top)
         }
         assertBallPixel(Color.GREEN)
     }
 
     @Test fun ballRepositionsWhenItsHostViewportShrinks() {
+        ballBottom = 0.2
         launchSavedTokenGame()
         onMain {
             val host = ball()!!.parent as ViewGroup
             host.layoutParams = host.layoutParams.apply { width = 600; height = 300 }
         }
-        awaitMain("悬浮层应完成窗口尺寸变化") { (ball()!!.parent as ViewGroup).let { it.width == 600 && it.height == 300 } }
+        awaitMain("悬浮层缩小后应重新按高度计算底部 20% 间距") {
+            val image = ball()!!
+            (image.parent as ViewGroup).let { it.width == 600 && it.height == 300 && image.bottom == 240 }
+        }
         onMain { assertBallInsideHost(ball()!!, ball()!!.parent as ViewGroup) }
+        assertBallPixel(Color.GREEN)
+    }
+
+    @Test fun fractionalTopWinsOverBottomInActualView() {
+        ballTop = 0.2
+        ballBottom = 200
+        launchSavedTokenGame()
+        onMain {
+            val host = ball()!!.parent as ViewGroup
+            host.layoutParams = host.layoutParams.apply { width = 600; height = 300 }
+        }
+        awaitMain("同时配置时应使用 top=20%，即距 300px 高窗口顶部 60px") {
+            val image = ball()!!
+            (image.parent as ViewGroup).let { it.width == 600 && it.height == 300 && image.top == 60 }
+        }
+        onMain { assertBallInsideHost(ball()!!, ball()!!.parent as ViewGroup) }
+        assertBallPixel(Color.GREEN)
+    }
+
+    @Test fun configuredDpSizeDoesNotGrowWithHostWidth() {
+        ballSize = 20
+        launchSavedTokenGame()
+        val expectedSize = (20 * activityRule.activity.resources.displayMetrics.density).toInt()
+        onMain {
+            assertEquals("初始宽度应为 20dp", expectedSize, ball()!!.width)
+            assertEquals("初始高度应为 20dp", expectedSize, ball()!!.height)
+            val host = ball()!!.parent as ViewGroup
+            host.layoutParams = host.layoutParams.apply { width = 600; height = 300 }
+        }
+        awaitMain("容器宽度变化后，球体应保持 20dp 宽高") {
+            val image = ball()!!
+            (image.parent as ViewGroup).let {
+                it.width == 600 && it.height == 300 && image.width == expectedSize && image.height == expectedSize
+            }
+        }
         assertBallPixel(Color.GREEN)
     }
 
@@ -455,7 +498,7 @@ class MainActivityFloatingBallTest {
 
     private fun configJson() = """{"code":0,"msg":"ok","data":{
         "privacyAuto":false,"aliyunOnekeyConfig":{"open":${if (onekeyEnabled) 1 else 0},"config":{"scheme_secret":"fixture-scheme-secret","exchange_url":"${url("exchange")}"}},
-        "floatball":{"show":$initiallyShown,"image_default":"${url("default.png")}","image_active":"${url("active.png")}","width":$ballSize,"height":$ballSize,"right":10,"bottom":$ballBottom},
+        "floatball":{"show":$initiallyShown,"image_default":"${url("default.png")}","image_active":"${url("active.png")}","width":$ballSize,"height":$ballSize,"right":10,${ballTop?.let { "\"top\":$it," }.orEmpty()}"bottom":$ballBottom},
         "h5Pages":{${listOf("login", "game", "welfare").joinToString(",") { name ->
             """"$name":{"instance":"web_$name","url":"${url(name)}","width":"100%","height":"100%","left":0,"top":0}"""
         }}}

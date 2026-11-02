@@ -2,18 +2,20 @@
 
 本文面向 Android、H5 联调及 iOS 开发筹备，说明项目文档的用途、优先级和当前状态。SDK 初始化接口硬编码为 `https://box.74meng.com/h5_app/init`，配置结构和联调待确认项以需求文档为准。
 
-进度更新（2026-11-02）：用户已确认当前 Android 项目完成真机测试。具体进度及历史验证记录见[安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md)；代码与文档审查发现的问题另行跟踪。
+进度更新（2026-11-02）：用户已确认此前 Android 版本完成真机测试；本次新增悬浮球 dp 尺寸与垂直位置规则须单独设备复验。具体进度及历史验证记录见[安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md)；代码与文档审查发现的问题另行跟踪。
+
+平台开发边界以根目录 [AGENTS.md](AGENTS.md) 为准：Windows 仅开发安卓端，macOS 仅开发 iOS 端，不跨平台修改另一端专属代码、资源和构建配置；共用文档可随任务同步。
 
 ## 文档关系
 
 | 文档 | 用途 | 当前状态 |
 | --- | --- | --- |
-| [安卓 H5 游戏包开发需求文档](安卓H5游戏包开发需求文档_requirements.md) | 从零开发 Android 游戏工程、模块职责、出包工具与验收目标；业务口径以此为准 | 开发基线；Android 主流程已接线，真机测试已完成（2026-11-02 用户确认） |
-| [初始化接口字段说明](docs/初始化接口字段说明_initialization-api.md) | 初始化请求、响应及 `updateInfo` 最新字段、迁移关系 | 2026-10-28 更新 `open/width/height/popup/force/title/time/desc/version/url`；原生更新已接线，验证结果见联调指南 |
+| [安卓 H5 游戏包开发需求文档](安卓H5游戏包开发需求文档_requirements.md) | 从零开发 Android 游戏工程、模块职责、出包工具与验收目标；业务口径以此为准 | Android 主流程已接线；此前版本真机测试已完成，最新悬浮球位置变更待设备复验 |
+| [初始化接口字段说明](docs/初始化接口字段说明_initialization-api.md) | 初始化请求、响应、`updateInfo` 字段及安卓悬浮球尺寸/位置换算、迁移关系 | 2026-11-02 悬浮球 top 优先；宽高为 dp，垂直位置采用比例/dp；最新变更待设备复验 |
 | [阿里云一键登录独立需求](docs/阿里云一键登录独立需求_aliyun-onekey-login.md) | Android/iOS 共用的一键登录流程、配置、兑换接口、弹窗视觉、Bridge、异常回退及验收 | Android 真机测试已完成（用户确认）；iOS 接入与验收仍单独跟踪 |
 | [JSBridge 方法清单](JSBridge方法清单_jsbridge.md) | H5 与 Android 的方法名、参数、回调和返回码 | 业务规则已对齐；方法签名仍需联调确认，含 `changeGameUrl` |
 | [安卓渠道分包设计文档](安卓渠道分包设计文档_android_channel_packaging.md) | 已签名 APK 的渠道码写入、分包脚本使用及验收 | 脚本、原生读取器与合成 APK 回归测试已实现，读取器已接入主流程；Android 真机测试已完成，APK 验签结果单独记录 |
-| [安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md) | Android Debug 构建、Windows GUI 母包出包、渠道分包和联调验收步骤 | Android 真机测试已完成（用户确认）；桌面 GUI、签名出包及设备矩阵覆盖情况分别记录 |
+| [安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md) | Android Debug 构建、Windows GUI 母包出包、渠道分包和联调验收步骤 | 此前版本 Android 真机测试已完成；最新悬浮球变更的构建、单测与待设备复验情况单独记录 |
 | [Vue2 JSBridge 示例](示例/vue2-jsbridge-demo.html) | Vue2 CDN 页面调用基础信息、窗口关闭、`isAppInstalled` 和 `openApp` 的参考示例 | 含第三方应用包名输入和按钮，需在已注入新版 `QSMH5APP` 的 SDK WebView 中运行 |
 | [阿里云号码认证 SDK 压缩包](refs/numberAuthSDK_APP_Android_v2.14.24_operator_ui_log_static.zip) 与[接入说明](refs/安卓一键登录集成文档.txt) | Android 原生一键登录 SDK 与官方接入文档入口 | SDK v2.14.24；由 Android 原生模块集成 |
 | [iOS开发总体方案](docs/iOS开发总体方案_ios-development-proposal.md) | 功能迁移、平台差异、架构与 Bridge、H5 载入及导航拦截、更新入口、隐私撤回及阶段估算 | v0.3：已确认国内/企业签名意向，本次排除分发模式及充值专项；保留隐私撤回；渠道 Header 默认空；尚未创建 iOS 工程 |

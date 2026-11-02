@@ -37,6 +37,17 @@ class FloatingBallController(
 }
 
 object FloatingBallLayout {
-    fun toPixels(value: Int, screenWidthDp: Int, density: Float): Int =
+    fun toPixels(value: Int, density: Float): Int = (value * density).toInt()
+
+    fun horizontalOffsetToPixels(value: Int, screenWidthDp: Int, density: Float): Int =
         (value * screenWidthDp / 360f * density).toInt()
+
+    fun resolveTop(top: Double?, bottom: Double?, viewportHeightPx: Int, ballHeightPx: Int, density: Float = 1f): Int {
+        val offset = top ?: bottom ?: 0.0
+        // 仅 (0, 1) 为容器高度比例；1 及以上按 dp 转为布局所需的 px。
+        val offsetPx = if (offset > 0.0 && offset < 1.0) offset * viewportHeightPx else offset * density
+        val position = if (top != null || bottom == null) offsetPx
+            else viewportHeightPx.toDouble() - ballHeightPx - offsetPx
+        return position.coerceIn(0.0, (viewportHeightPx - ballHeightPx).coerceAtLeast(0).toDouble()).toInt()
+    }
 }

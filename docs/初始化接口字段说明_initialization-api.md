@@ -1,6 +1,6 @@
 # 初始化接口字段说明
 
-更新日期：2026-11-02。本文说明初始化接口的已确认字段，业务流程以 [安卓 H5 游戏包开发需求文档](../安卓H5游戏包开发需求文档_requirements.md) 为准。新契约已接入原生实现；用户已确认完成 Android 真机测试，具体进度与历史验证记录见[安卓工程构建与联调指南](安卓工程构建与联调指南_android-build-and-integration.md)。本次更新不改变接口字段约定。
+更新日期：2026-11-02。本文说明初始化接口的已确认字段，业务流程以 [安卓 H5 游戏包开发需求文档](../安卓H5游戏包开发需求文档_requirements.md) 为准。此前版本用户已确认完成 Android 真机测试，具体进度与历史验证记录见[安卓工程构建与联调指南](安卓工程构建与联调指南_android-build-and-integration.md)。本次调整 Android 悬浮球宽高为 dp，`top/bottom` 优先级及比例/dp 规则以下文为准；其设备复验单独记录，不沿用此前验收结论。
 
 ## 请求与响应
 
@@ -20,9 +20,77 @@
 | `data.jumpDomain` | string[] | 游戏内跳转到外部浏览器的精确主机白名单；不用于更新地址校验或 Bridge 来源校验 |
 | `data.aliyunOnekeyConfig` | object | 阿里云一键登录配置，`open=1` 开启；完整子字段、默认值、样式与 iOS 参考见[一键登录独立需求](阿里云一键登录独立需求_aliyun-onekey-login.md) |
 | `data.popupInterval` | object | 运营心跳地址 `url` 及秒数间隔 `interval` |
-| `data.floatball` | object | 悬浮球初始显隐、图片、尺寸与位置，详见需求文档第 5 节 |
+| `data.floatball` | object | 悬浮球初始显隐、图片、尺寸与位置，Android 规则详见下节 |
 | `data.privacyAuto` | boolean | 尚未同意隐私时是否先显示协议页面；`false` 跳过并本地标记已同意 |
 | `data.h5Pages` | object | 页面配置，以 `agreement/login/welfare/game` 映射页面实例及布局 |
+
+## 悬浮球字段 `data.floatball`（安卓）
+
+```json
+{
+  "show": true,
+  "image_default": "https://example.com/floatball.png",
+  "image_active": "https://example.com/floatball-active.png",
+  "width": 20,
+  "height": 20,
+  "right": 10,
+  "top": 0.2,
+  "bottom": 200
+}
+```
+
+该示例设置 20dp × 20dp 的球体控件，使用 `top=0.2`，忽略 `bottom=200`。字段作用于初始布局；拖动后使用拖动位置，容器尺寸变化时按初始化配置重新计算。
+
+| 字段 | 类型 | 规则 |
+| --- | --- | --- |
+| `show` | boolean | 可选，默认 `false`；登录且游戏加载后才允许显示 |
+| `image_default` / `image_active` | string | 必填，默认/激活状态的图片地址 |
+| `width` / `height` | 正整数 | 必填，单位为 dp，仅按设备 density 转换为布局所需的 px，不按窗口宽度缩放 |
+| `left` / `right` | 整数 | 可选，沿用 360 宽设计基准缩放；`left` 优先，两者均缺失按 `right=0` |
+| `top` / `bottom` | 非负有限 number | 可选；`top` 存在则完全忽略 `bottom`，包括其类型和数值；两者均缺失按 `top=0`。仅对生效字段校验数值，字符串、布尔、`null`、负数及溢出为非有限数值均拒绝 |
+
+### 垂直位置与边界
+
+- `0 < 值 < 1`：按当前悬浮层完整高度计算距离，`0.2` 为高度的 20%，不是字符串 `"20%"`，也不是可拖动行程的 20%。
+- `值 = 0`：贴对应边缘；`值 ≥ 1`：单位为 dp，可为小数，先乘设备 `density` 转成 px，不按窗口宽度缩放。`1` 与 `1.0` 均表示 1dp。
+- 设悬浮层高度为 `H`、dp 转换并限制后的球体高度为 `h`（均为 px）、生效距离为 `d`：比例值计算 `d = 值 × H`，其他值计算 `d = 值 × density`。选 `top` 时，球体上边缘 `y = d`；仅有 `bottom` 时，`y = H - h - d`。
+- 最终 `y` 限制在 `[0, H-h]` 并向下取整。球体宽高也限制在容器内，避免比例接近 1 或绝对距离过大时越界。比例 100% 不通过 `1` 表示；如需贴底，应只传 `bottom=0`。
+- 容器优先采用悬浮层实际宽高，首次尚未布局时回退到窗口像素尺寸。窗口变化后重新计算；不另行增加状态栏、刘海或手势区的间距。
+
+例如 `H=1000px`、`h=100px`、`density=3`：
+
+| 配置 | 球体上边缘 y | 说明 |
+| --- | --- | --- |
+| `top=0.2, bottom=200` | 200px | top 优先 |
+| 仅 `bottom=0.2` | 700px | 球体下边缘距底 200px |
+| `top=0, bottom=0.2` | 0px | 0 也是已提供的 top |
+| 两者缺失 | 0px | 默认顶部 |
+| 仅 `top=1` | 3px | 1dp × density |
+| 仅 `top=20` | 60px | 20dp × density |
+| 仅 `bottom=20` | 840px | 球体下边缘距底 60px，即 20dp |
+| 仅 `bottom=0` | 900px | 球体贴底 |
+| 仅 `top=0.99` | 900px | 计算值 990px 限制为完整可见位置 |
+
+### 为什么宽高与 PC 的同数字像素观感不同
+
+初始化返回的整数宽高单位为 **Android dp**，不是图片文件像素。原生 `LayoutParams` 接收 px，代码先按设备密度转换：
+
+```text
+实际宽或高 px = floor(配置 dp 值 × density)
+```
+
+最终宽高分别限制在容器宽高内，最小为 1px。宽高不再按 360 宽设计基准缩放；相同 density 下，只要容器足够容纳球体，横竖屏和窗口宽度变化不会改变它的 dp 尺寸。
+
+- `width=20,height=20`：`density=1` 时为 20×20px，`density=2` 时为 40×40px，`density=3` 时为 60×60px，均表示 20dp × 20dp。
+- 同一设备从 1080px 宽竖屏切至 1920px 宽横屏，若 `density=3`，球体仍为 60×60px；窗口尺寸不参与宽高换算。
+- 网络图像通过 `FIT_CENTER` 等比放入控件，比例不同或图片有透明留白时，可见图案会比控件边框小。原图分辨率主要影响清晰度，不直接决定控件尺寸。
+- PC 浏览器通常用 CSS px；页面缩放、系统缩放和 `devicePixelRatio` 会影响其物理像素数量。手机像素密度也不同，同样数量的物理像素并不保证相同的物理尺寸，不能只比较数字。
+
+`left/right` 本次继续使用原有 360 宽设计基准缩放，单独计算：`screenWidthDp = floor(容器宽 px / density)`，水平间距 px 为 `floor(配置值 × screenWidthDp / 360 × density)`；其优先级不变。PC 预览应按 dp 设计尺寸和目标密度模拟，不应把接口的 `20` 直接当作手机上的 20 个物理像素。
+
+### 旧包迁移
+
+此前 Android 采用 `bottom` 优先，宽高和垂直间距均按 360 宽设计基准缩放。本次最终规则为 `top` 优先、宽高直接按 dp、`top/bottom ≥ 1` 按 dp；此前同日草案中的“物理 px 直用”已被本次 dp 约定替代。原 `width/height` 及仅传 `bottom=200` 等配置的实际显示可能变化，应按 dp 核对。客户端须重新构建并安装 APK；旧 APK 和仅重新渠道分包的旧母包不会应用新布局。
 
 ## 更新字段 `data.updateInfo`
 

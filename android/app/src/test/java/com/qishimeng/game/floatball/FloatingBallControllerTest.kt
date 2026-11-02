@@ -38,7 +38,7 @@ class FloatingBallControllerTest {
     }
 
     @Test
-    fun unchangedImageStateDoesNotRequestReloadAndLayoutUsesScreenScaling() {
+    fun unchangedImageStateDoesNotRequestReloadAndHorizontalOffsetKeepsScreenScaling() {
         var reloads = 0
         val controller = FloatingBallController(true) { reloads++ }
         controller.setSessionReady(true)
@@ -46,6 +46,6 @@ class FloatingBallControllerTest {
         controller.setRuntimeState(true, true)
         controller.setRuntimeState(false, true)
         assertEquals(1, reloads)
-        assertEquals(144, FloatingBallLayout.toPixels(36, screenWidthDp = 720, density = 2f))
+        assertEquals(144, FloatingBallLayout.horizontalOffsetToPixels(36, screenWidthDp = 720, density = 2f))
     }
 }

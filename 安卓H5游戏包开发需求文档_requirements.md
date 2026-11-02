@@ -378,8 +378,9 @@ HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_
 
 - **创建与显隐：** 登录完成且 `web_game` 实例加载后，才创建并显示悬浮球；初始化配置 `floatball.show=false` 时隐藏，`true` 时允许显示。后续心跳或 H5 调用可以更新运行时 `show` 状态。福利大厅 `web_welfare` 位于游戏上方时强制临时隐藏；大厅关闭或游戏重新置顶后恢复运行时悬浮球状态，大厅保留在游戏后方不影响显示。游戏实例关闭或退出登录后不显示。
 - **激活与图标：** 默认 `active=false`，使用 `floatball.image_default`；`active=true` 使用 `floatball.image_active`。运行中的显隐和激活状态可由 JSBridge 或心跳响应更新。
-- **尺寸和位置：** 初始化响应 `floatball` 当前包含 `show`、`image_default`、`image_active`、`width`、`height`、`right`、`bottom`。位置支持 `left`/`right` 与 `top`/`bottom`，表示距屏幕对应边缘的间距；同一方向的两侧同时提供时，优先 `left`、`bottom`，忽略 `right`、`top`。示例使用 `right=10`、`bottom=200`。
-- `width`、`height` 和位置偏移为正整数，默认单位为像素；建议以 360dp 屏幕宽度为设计基准，结合设备密度换算为 dp，并避让状态栏、手势区等安全区域。
+- **尺寸和水平位置：** 初始化响应 `floatball` 支持 `show`、`image_default`、`image_active`、`width`、`height`、`left`、`right`、`top`、`bottom`。`width`、`height` 为正整数，单位为 dp，仅乘设备密度转换为 px，不按窗口宽度缩放；如 `width=20,height=20` 设置为 20dp × 20dp。`left`/`right` 为整数，本次沿用原有 360 宽设计基准缩放；同时提供时优先 `left`，两者缺失时按 `right=0`。
+- **垂直位置（2026-11-02 最终规则）：** `top` 优先于 `bottom`，同时存在时完全忽略 `bottom`；两者均缺失时按 `top=0`。生效字段必须为非负、有限的 JSON 数值；`0 < 值 < 1` 表示当前悬浮层完整高度的比例，如 `0.2` 表示 20%；`0` 表示贴对应边，`值 ≥ 1` 单位为 dp（`1` 即 1dp），只乘设备密度转换为 px，不按窗口宽度缩放。`top` 从球体上边缘计算，`bottom` 从球体下边缘计算。
+- 尺寸与最终坐标限制在当前悬浮层可见范围内，坐标计算完成后向下取整；窗口尺寸变化时重新计算。比例基于容器完整高度，非球体可拖动行程，不额外叠加安全区间距。详细公式、示例及与 PC 像素的区别见[初始化接口字段说明](docs/初始化接口字段说明_initialization-api.md#悬浮球字段-datafloatball安卓)。
 - 用户可垂直拖动悬浮球；点击后在游戏页面上层打开福利大厅。多个动态弹窗按心跳 `popup_pages` 数组顺序叠放，后项位于上层。
 - 图标或显隐状态未改变时不得重复加载图标；仅在图标确实变化时更新图像，避免重载闪动。位置或尺寸变化应更新布局，不应仅因此重载图像。
 - 初始化的 `floatball.show` 是初始状态；后续心跳和 H5 `setFloatingBall` 更新运行状态。福利大厅打开和游戏页关闭属于生命周期约束，分别临时隐藏及停止显示。

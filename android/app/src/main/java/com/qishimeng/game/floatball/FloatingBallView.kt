@@ -83,12 +83,11 @@ class FloatingBallView(
         val metrics = activity.resources.displayMetrics
         val viewport = FullscreenViewport.resolve(host.width, host.height, metrics.widthPixels, metrics.heightPixels)
         val screenWidthDp = (viewport.widthPx / metrics.density).toInt()
-        val widthPx = FloatingBallLayout.toPixels(config.width, screenWidthDp, metrics.density).coerceIn(1, viewport.widthPx)
-        val heightPx = FloatingBallLayout.toPixels(config.height, screenWidthDp, metrics.density).coerceIn(1, viewport.heightPx)
-        val leftPx = config.left?.let { FloatingBallLayout.toPixels(it, screenWidthDp, metrics.density) }
-            ?: (viewport.widthPx - FloatingBallLayout.toPixels(config.right ?: 0, screenWidthDp, metrics.density) - widthPx)
-        val topPx = config.bottom?.let { viewport.heightPx - FloatingBallLayout.toPixels(it, screenWidthDp, metrics.density) - heightPx }
-            ?: FloatingBallLayout.toPixels(config.top ?: 0, screenWidthDp, metrics.density)
+        val widthPx = FloatingBallLayout.toPixels(config.width, metrics.density).coerceIn(1, viewport.widthPx)
+        val heightPx = FloatingBallLayout.toPixels(config.height, metrics.density).coerceIn(1, viewport.heightPx)
+        val leftPx = config.left?.let { FloatingBallLayout.horizontalOffsetToPixels(it, screenWidthDp, metrics.density) }
+            ?: (viewport.widthPx - FloatingBallLayout.horizontalOffsetToPixels(config.right ?: 0, screenWidthDp, metrics.density) - widthPx)
+        val topPx = FloatingBallLayout.resolveTop(config.top, config.bottom, viewport.heightPx, heightPx, metrics.density)
         return FrameLayout.LayoutParams(widthPx, heightPx).apply {
             leftMargin = leftPx.coerceIn(0, viewport.widthPx - widthPx)
             topMargin = topPx.coerceIn(0, viewport.heightPx - heightPx)

@@ -6,6 +6,37 @@ import org.junit.Test
 
 class InitConfigParserTest {
     @Test
+    fun preservesFloatingBallFractionalVerticalOffsets() {
+        val top = (parseFloatingBall("\"top\":0.2") as ParseResult.Success).value.floatingBall!!
+        val bottom = (parseFloatingBall("\"bottom\":0.25") as ParseResult.Success).value.floatingBall!!
+
+        assertEquals(0.2, top.top!!.toDouble(), 0.0)
+        assertEquals(0.25, bottom.bottom!!.toDouble(), 0.0)
+    }
+
+    @Test
+    fun ignoresBottomCompletelyWhenTopIsPresentIncludingZero() {
+        val result = parseFloatingBall("\"top\":0,\"bottom\":\"ignored\"")
+        assertTrue(result is ParseResult.Success)
+        val ball = (result as ParseResult.Success).value.floatingBall!!
+        assertEquals(0.0, ball.top!!.toDouble(), 0.0)
+        assertEquals(null, ball.bottom)
+    }
+
+    @Test
+    fun rejectsInvalidFloatingBallVerticalOffsets() {
+        for (field in listOf("top", "bottom")) {
+            for (value in listOf("-1", "-0.2", "1e309", "\"0.2\"", "true", "null", "[]")) {
+                assertTrue("$field=$value", parseFloatingBall("\"$field\":$value") is ParseResult.Failure)
+            }
+        }
+    }
+
+    private fun parseFloatingBall(verticalFields: String): ParseResult<InitConfig> = InitConfigParser.parse(
+        """{"code":0,"data":{"floatball":{"show":true,"image_default":"https://example.com/ball.png","image_active":"https://example.com/active.png","width":36,"height":36,$verticalFields}}}"""
+    )
+
+    @Test
     fun malformedUpdateConfigDoesNotTurnSuccessfulInitializationIntoFailure() {
         val absent = InitConfigParser.parse("""{"code":0,"data":{"updateInfo":null}}""")
         assertTrue(absent is ParseResult.Success)

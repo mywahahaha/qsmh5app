@@ -76,6 +76,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -85,7 +88,9 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.webkit)
     implementation(libs.gson)
+    implementation(libs.glide)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)

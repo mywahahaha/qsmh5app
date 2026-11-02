@@ -28,7 +28,7 @@ class ApkInstallerTest {
     }
     @After fun tearDown() { onMain { installer?.close() }; apk.delete() }
 
-    @Test fun privateApkIsSharedViaReadableContentUriAndCanBeInstalledAgain() {
+    @Test fun privateApkIsSharedViaReadableContentUriAndSuccessfulLaunchEndsGame() {
         val intents = mutableListOf<Intent>()
         onMain {
             installer = ApkInstaller(activityRule.activity, { intents.add(it) }, { true })
@@ -40,11 +40,13 @@ class ApkInstallerTest {
             assertEquals("content", intent.data!!.scheme)
             assertEquals("application/vnd.android.package-archive", intent.type)
             assertTrue(intent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+            assertTrue(intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+            assertTrue(activityRule.activity.isFinishing)
             activityRule.activity.contentResolver.openInputStream(intent.data!!)!!.use {
                 assertEquals('P'.code, it.read()); assertEquals('K'.code, it.read())
             }
             installer!!.install(apk)
-            assertEquals(2, intents.size)
+            assertEquals("成功后不再重复打开安装器", 1, intents.size)
         }
     }
 
@@ -56,6 +58,7 @@ class ApkInstallerTest {
             installer = ApkInstaller(activityRule.activity, { intents.add(it) }, { allowed }, { message = it })
             installer!!.install(apk)
             assertEquals(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, intents.single().action)
+            assertFalse("授权设置打开时不退出", activityRule.activity.isFinishing)
             assertEquals("package:${activityRule.activity.packageName}", intents.single().data.toString())
             installer!!.onResume()
             assertEquals(1, intents.size); assertFalse(message.isBlank())
@@ -64,6 +67,7 @@ class ApkInstallerTest {
             installer!!.onResume(); installer!!.onResume()
             assertEquals(3, intents.size)
             assertEquals(Intent.ACTION_VIEW, intents.last().action)
+            assertTrue(activityRule.activity.isFinishing)
         }
     }
 

@@ -163,7 +163,7 @@ class MainActivityUpdateTest {
         assertEquals(0, logins.get())
     }
 
-    @Test fun internalDownloadAutomaticallyRequestsInstallAndButtonCanRequestAgain() {
+    @Test fun internalDownloadRequestsInstallThenExitsAndNextLaunchCreatesFreshGameTask() {
         // 仅测试包授权；Gradle 设备测试结束会卸载测试应用。不能在测试进程内撤销此授权，否则系统会杀掉进程。
         android.os.ParcelFileDescriptor.AutoCloseInputStream(
             instrumentation.uiAutomation.executeShellCommand("appops set ${context.packageName} REQUEST_INSTALL_PACKAGES allow")
@@ -177,9 +177,13 @@ class MainActivityUpdateTest {
         onView(withText("立即更新")).inRoot(isDialog()).perform(click())
         await("下载完成后应请求系统安装") { monitor!!.hits == 1 }
         assertEquals(1, downloads.get()); assertEquals(0, logins.get())
-        onView(withText("立即安装")).inRoot(isDialog()).perform(click())
-        await("可再次请求安装") { monitor!!.hits == 2 }
-        assertEquals(1, downloads.get())
+        val previous = rule.activity
+        await("成功发起安装后应结束旧游戏 Activity") { previous.isFinishing || previous.isDestroyed }
+        enabled = 0
+        launch()
+        await("再次启动应重新初始化并加载登录页") { logins.get() == 1 }
+        assertNotSame("桌面重新启动不得复用旧 Activity", previous, rule.activity)
+        assertEquals("重新启动不能重复唤起旧安装流程", 1, monitor!!.hits)
     }
 
     private fun launch() { rule.launchActivity(null); launched = true }

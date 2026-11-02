@@ -103,7 +103,11 @@ class WebPageRecoveryTest {
         }
         for (attempt in 1..4) {
             await("第 $attempt 次加载未发出") { count("/unavailable") == attempt }
-            onMain { assertFalse("第 $attempt 次加载及自动重试期间不能显示提示", hasNativeTextOnMain()) }
+            Thread.sleep(300) // 超过打开淡入的 200ms，防止只检查动画起点而漏掉深色遮罩。
+            onMain {
+                assertFalse("第 $attempt 次加载及自动重试期间不能显示提示", hasNativeTextOnMain())
+                assertEquals("自动重试期间窗口不能遮住底层画面", 0f, (view.parent as View).alpha, 0.001f)
+            }
             releaseUnavailable.release()
         }
         await("三次重试全部失败后才显示错误码") { hasText("H5_HTTP_503") }
@@ -116,6 +120,28 @@ class WebPageRecoveryTest {
         }
         releaseUnavailable.release()
         awaitPage(view)
+    }
+
+    @Test fun slowWelfareKeepsGameVisibleUntilFirstContentCommit() {
+        lateinit var game: WebInstance
+        lateinit var welfare: WebInstance
+        onMain { game = container.openConfigured("game")!! }
+        awaitPage(game.webView)
+        onMain { welfare = container.open(spec("web_welfare", "/slow"))!! }
+        await("福利页必须已开始真实 HTTP 加载") { count("/slow") == 1 }
+        Thread.sleep(300)
+        onMain {
+            assertEquals("等待福利页时保留游戏画面", 1f, game.pageView.alpha, 0.001f)
+            assertSame(game.webView, container.get("web_game")!!.webView)
+            assertEquals(View.VISIBLE, game.webView.visibility)
+            assertEquals("不能提前淡入深色加载面板", 0f, welfare.pageView.alpha, 0.001f)
+        }
+        releaseSlowResponse.countDown()
+        awaitPage(welfare.webView)
+        onMain {
+            assertEquals("首帧可见后福利页完成淡入", 1f, welfare.pageView.alpha, 0.001f)
+            assertSame("显示福利页不能销毁游戏实例", game, container.get("web_game"))
+        }
     }
 
     @Test fun missingMainDocumentShowsCodeWithoutAutomaticRetries() {
@@ -368,7 +394,7 @@ class WebPageRecoveryTest {
                 val sibling = parent.getChildAt(it)
                 sibling !== view && sibling.visibility == View.VISIBLE
             }
-            visible = view.visibility == View.VISIBLE && !covered && !hasNativeTextOnMain()
+            visible = view.visibility == View.VISIBLE && parent.alpha >= 0.999f && !covered && !hasNativeTextOnMain()
         }
         done.await(2, TimeUnit.SECONDS) && ready && visible
     }

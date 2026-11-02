@@ -69,8 +69,13 @@ class ApkInstaller(
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            // 安装器独立于游戏任务，移除游戏任务时不会连同安装页面一起关闭。
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             clipData = ClipData.newRawUri("更新安装包", uri)
         }
         launchIntent(intent)
+        close()
+        // 不强杀进程或删除 APK，安装器仍需通过 FileProvider 读取文件。
+        activity.finishAndRemoveTask()
     }
 }

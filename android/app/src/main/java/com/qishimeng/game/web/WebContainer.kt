@@ -53,7 +53,6 @@ class WebContainer(
             (operationalBridgeInstaller != null && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)))
         val webView = WebView(activity)
         val pageView = WebPageView(activity, webView) { onPageVisible(spec.instance) }
-        pageView.alpha = 0f
         webView.setBackgroundColor(Color.TRANSPARENT)
         webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         webView.settings.javaScriptEnabled = true
@@ -168,7 +167,6 @@ class WebContainer(
         registry.open(spec, operational)
         host.addView(pageView, createLayoutParams(spec))
         pageView.load(spec.url)
-        pageView.animate().alpha(1f).setDuration(PAGE_TRANSITION_MILLIS).start()
         bringToFront(spec.instance)
         onOpened(spec.instance)
         return instance

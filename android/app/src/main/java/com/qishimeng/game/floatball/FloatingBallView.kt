@@ -1,18 +1,18 @@
 package com.qishimeng.game.floatball
 
 import android.app.Activity
-import android.graphics.BitmapFactory
+import android.graphics.drawable.Animatable
+import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.os.Handler
-import android.os.Looper
+import com.bumptech.glide.Glide
+import com.bumptech.glide.load.resource.gif.GifDrawable
+import com.bumptech.glide.request.target.DrawableImageViewTarget
+import com.bumptech.glide.request.transition.Transition
 import com.qishimeng.game.config.FloatingBallConfig
 import com.qishimeng.game.web.FullscreenViewport
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.concurrent.Executors
 
 class FloatingBallView(
     private val activity: Activity,
@@ -22,8 +22,26 @@ class FloatingBallView(
     private val onClick: () -> Unit
 ) {
     private val image = ImageView(activity)
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private val loader = Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "qsm-floating-ball-image").apply { isDaemon = true } }
+    private val requests = Glide.with(host)
+    private var animationAllowed = true
+    private val imageTarget = object : DrawableImageViewTarget(image) {
+        override fun onResourceReady(resource: Drawable, transition: Transition<in Drawable>?) {
+            (resource as? GifDrawable)?.setLoopCount(GifDrawable.LOOP_INTRINSIC)
+            super.onResourceReady(resource, transition)
+            updateAnimationVisibility()
+        }
+
+        override fun onStart() {
+            animationAllowed = true
+            super.onStart()
+            updateAnimationVisibility()
+        }
+
+        override fun onStop() {
+            animationAllowed = false
+            super.onStop()
+        }
+    }
     private var currentImageUrl: String? = null
     private var active = false
     private val hostLayoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
@@ -44,7 +62,10 @@ class FloatingBallView(
     }
 
     fun show(visible: Boolean) {
-        image.visibility = if (visible) View.VISIBLE else View.GONE
+        val visibility = if (visible) View.VISIBLE else View.GONE
+        if (image.visibility == visibility) return
+        image.visibility = visibility
+        updateAnimationVisibility()
     }
 
     fun setActive(isActive: Boolean) {
@@ -54,7 +75,7 @@ class FloatingBallView(
     }
 
     fun destroy() {
-        loader.shutdownNow()
+        requests.clear(imageTarget)
         host.removeOnLayoutChangeListener(hostLayoutListener)
         host.removeView(image)
     }
@@ -62,21 +83,17 @@ class FloatingBallView(
     private fun loadImage(url: String) {
         if (url.isBlank() || url == currentImageUrl) return
         currentImageUrl = url
-        loader.execute {
-            val bitmap = runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connectTimeout = 5_000
-                connection.readTimeout = 5_000
-                try {
-                    connection.inputStream.use(BitmapFactory::decodeStream)
-                } finally {
-                    connection.disconnect()
-                }
-            }.getOrNull()
-            if (bitmap != null) mainHandler.post {
-                if (currentImageUrl == url) image.setImageBitmap(bitmap)
-            }
-        }
+        // 由图片内容识别 GIF；更换同一 target 的请求时，Glide 取消旧请求并释放旧动画。
+        requests.load(url).timeout(5_000).disallowHardwareConfig().into(imageTarget)
+    }
+
+    private fun updateAnimationVisibility() {
+        val animation = image.drawable as? Animatable ?: return
+        val visible = animationAllowed && image.visibility == View.VISIBLE
+        image.drawable.setVisible(visible, false)
+        if (visible) {
+            if (!animation.isRunning) animation.start()
+        } else animation.stop()
     }
 
     private fun createLayoutParams(): FrameLayout.LayoutParams {

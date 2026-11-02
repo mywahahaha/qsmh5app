@@ -72,6 +72,7 @@ class WebPageView(
     }
 
     init {
+        alpha = 0f
         addView(webView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(panel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         panel.visibility = View.GONE
@@ -142,6 +143,7 @@ class WebPageView(
         pendingNavigation = false
         panel.visibility = View.GONE
         webView.visibility = View.VISIBLE
+        reveal()
         onContentReady()
     }
 
@@ -170,7 +172,8 @@ class WebPageView(
         // 立即停掉底层请求，不再等 Chromium 自己的代理/连接超时。
         webView.stopLoading()
         if (recovery.phase == PageLoadPhase.WAITING_RETRY) {
-            // 仅保留空白遮罩以屏蔽系统错误文档，自动重试期间不显示提示。
+            // 错误文档由面板遮住，整个窗口保持透明，继续显示底层游戏。
+            hideUntilReady()
             panel.getChildAt(0).visibility = View.GONE
             handler.post(retryAction)
         } else {
@@ -179,14 +182,26 @@ class WebPageView(
             retry.visibility = View.VISIBLE
             settings.visibility = View.VISIBLE
             panel.getChildAt(0).visibility = View.VISIBLE
+            reveal()
         }
     }
 
     private fun showLoading() {
-        // 内容只在最终失败时显示；手动重试也立即隐藏上次错误提示。
+        // WebView 保持布局与渲染；首次加载、导航与重试时不把深色面板露给用户。
+        hideUntilReady()
         panel.getChildAt(0).visibility = View.GONE
         panel.visibility = View.VISIBLE
         webView.visibility = View.VISIBLE
+    }
+
+    private fun hideUntilReady() {
+        animate().cancel()
+        alpha = 0f
+    }
+
+    private fun reveal() {
+        animate().cancel()
+        animate().alpha(1f).setDuration(200L).start()
     }
 
     fun onResume() {
@@ -197,6 +212,7 @@ class WebPageView(
 
     fun close() {
         recovery.close()
+        animate().cancel()
         returningFromSettings = false
         cancelPending()
         webView.stopLoading()

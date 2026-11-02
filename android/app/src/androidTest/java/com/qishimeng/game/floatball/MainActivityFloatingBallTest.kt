@@ -6,6 +6,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.JavascriptInterface
 import android.widget.ImageView
@@ -402,6 +403,33 @@ class MainActivityFloatingBallTest {
         assertBallPixel(Color.GREEN)
     }
 
+    @Test fun loadedGameKeepsScreenAwakeUntilGameCloses() {
+        initiallyShown = false
+        launch()
+        val login = awaitWeb("login")
+        onMain { assertFalse("登录页应保留系统自动息屏策略", keepsScreenAwake()) }
+        call(login, "notifyLoginSuccess", "{accountToken:'fixture-login-token'}")
+        assertTrue(gameRequested.await(10, TimeUnit.SECONDS))
+        onMain { assertFalse("游戏文档加载前不应保持常亮", keepsScreenAwake()) }
+        releaseGame.countDown()
+        val game = awaitWeb("game")
+        awaitMain("游戏加载后应保持屏幕常亮，且不依赖悬浮球是否显示") { keepsScreenAwake() }
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        val welfare = awaitWeb("welfare")
+        onMain { assertTrue("游戏期间打开福利大厅应继续保持常亮", keepsScreenAwake()) }
+        call(welfare, "closePage", "{}")
+        call(game, "closePage", "{}")
+        awaitMain("退出游戏后应恢复系统自动息屏策略") { !keepsScreenAwake() }
+    }
+
+    @Test fun logoutRestoresAutomaticScreenTimeout() {
+        launchSavedTokenGame()
+        onMain { assertTrue("进入游戏后应保持屏幕常亮", keepsScreenAwake()) }
+        call(awaitWeb("game"), "logout", "{}")
+        awaitWeb("login")
+        onMain { assertFalse("退出登录后应恢复系统自动息屏策略", keepsScreenAwake()) }
+    }
+
     private fun launchSavedTokenGame() {
         context.getSharedPreferences("privacy_state", 0).edit().putBoolean("agreed", true).commit()
         EncryptedAccountTokenStore(context).token = "fixture-saved-token"
@@ -411,6 +439,9 @@ class MainActivityFloatingBallTest {
         awaitWeb("game")
         awaitMain("游戏加载后应创建悬浮球") { ballIsVisible(Color.GREEN) }
     }
+
+    private fun keepsScreenAwake(): Boolean =
+        activityRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
 
     private fun assertBallInsideHost(image: ImageView, host: ViewGroup) {
         assertTrue("悬浮球必须完整位于可见区域内，实际球框=[${image.left},${image.top},${image.right},${image.bottom}]，窗口=${host.width}x${host.height}",

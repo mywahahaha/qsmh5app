@@ -15,7 +15,7 @@ SDK 初始化接口固定硬编码为 `https://box.74meng.com/h5_app/init`。分
 
 本文是本项目完整 Android 游戏工程之外的渠道发行辅助流程，只适用于 Android APK。AAB 不能直接作为输入；应先由本项目的共用 Android Gradle 模板生成并签名 APK，再进行渠道分包。
 
-> 当前仓库已提供 Python 分包脚本 `tools/channel_apk.py`；
+> 当前仓库已提供 Python 分包脚本 `tools/channel_apk.py` 和 Android 读取器，读取器已接入 `GameInfo`、Bridge 及请求 Header。2026-11-02 用户已确认 Android 真机测试完成；母包和渠道包的验签命令及回读复验步骤见第 8 节，具体 APK 验签结果应单独记录。
 
 ## 2. 实现原理与边界
 
@@ -43,7 +43,7 @@ SDK 初始化接口固定硬编码为 `https://box.74meng.com/h5_app/init`。分
 | --- | --- |
 | `tools/channel_apk.py` | Android APK 渠道分包脚本 |
 | `tools/error.log` | 脚本预期失败时追加的错误日志；日志写入失败不改变脚本退出结果 |
-| SDK 渠道码读取实现 | 需求要求从已安装 APK 读取渠道码；具体源码路径待 SDK 工程确定，当前仓库不包含 Android SDK 源码 |
+| `android/app/src/main/java/com/qishimeng/game/channel/ChannelCodeReader.kt` | 从已安装 APK 的 Signing Block 读取渠道码，已在 `MainActivity.gameInfo()` 接入，供 `getGameInfo.data.packageCode` 和请求 Header `Packagecode` 使用 |
 
 脚本命令格式：
 

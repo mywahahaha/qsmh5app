@@ -216,6 +216,7 @@ class MainActivity : AppCompatActivity() {
         heartbeatSession = null
         initConfig = config
         gamePageReady = false
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         floatingBall?.destroy()
         floatingBall = null
         floatingBallController = config.floatingBall?.let { FloatingBallController(it.show) }
@@ -229,6 +230,7 @@ class MainActivity : AppCompatActivity() {
             onClosed = { instance ->
                 if (instance == "web_game") {
                     gamePageReady = false
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     stopPopupHeartbeat()
                     floatingBallController?.resetSession()
                 }
@@ -243,6 +245,8 @@ class MainActivity : AppCompatActivity() {
                     // 每次游戏主文档成功提交后清空所有游戏角色，等待本次页面重新上报。
                     roleStore.clear()
                     gamePageReady = true
+                    // 仅前台游戏窗口保持亮屏，后台和手动锁屏仍遵循系统行为。
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
                 refreshFloatingBall()
             },

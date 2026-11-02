@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iOS 原生 UI 设计预览 · 骑士盟</title>
+<style>
+:root{color-scheme:light;--red:#c52d28;--orange:#ff6600;--green:#41be56}
+*{box-sizing:border-box}body{margin:0;background:#f4f5f7;color:#252b34;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+header.page{background:#fff;border-bottom:1px solid #e3e6ea;padding:24px 4vw;display:flex;justify-content:space-between;align-items:center;gap:20px}h1{font-size:23px;margin:0 0 8px}p{line-height:1.7;margin:8px 0}.meta{font-size:13px;color:#68717f}.badge{padding:7px 12px;background:#fff0e9;color:#ae4c18;border-radius:20px;font-size:12px;white-space:nowrap}
+main{max-width:1480px;margin:24px auto;padding:0 3vw;display:grid;grid-template-columns:265px minmax(0,1fr);gap:24px}
+aside,.workspace{background:#fff;border:1px solid #e1e5ea;border-radius:16px;padding:22px}h2{font-size:16px;margin:0 0 16px}label{display:block;font-size:13px;margin:15px 0 6px}select,input[type=range]{width:100%}select{padding:9px;border-radius:7px;border:1px solid #cdd3db;background:#fff;font:inherit;font-size:13px}
+button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid #477fe8;outline-offset:3px}.notes{margin-top:22px;font-size:12px;line-height:1.8;color:#637082}.notes strong{color:#343e4c}.linkrow{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;margin-top:18px}a{color:#275ac1}
+.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:18px}.state-label{font-size:15px;font-weight:600}.small{font-size:12px;color:#6d7682}
+.stage{width:100%;min-height:420px;display:flex;justify-content:center;align-items:flex-start;overflow:hidden;background:#e9edf2;border-radius:12px;padding:22px 10px}
+.fit{position:relative;flex:none}.device{position:absolute;top:0;left:0;width:844px;height:390px;background:#172d3b;border:7px solid #151719;border-radius:38px;overflow:hidden;transform-origin:top left;box-shadow:0 16px 26px #17273530}
+.device.portrait{width:390px;height:844px;border-radius:44px}.background{position:absolute;inset:0;background:radial-gradient(ellipse at 80% 15%,#e7a95445,transparent 40%),linear-gradient(155deg,#476b79,#1a3445 50%,#111d2c)}
+.mountains{position:absolute;inset:0;background:linear-gradient(150deg,transparent 58%,#203d4b 58%,#203d4b 74%,transparent 74%),linear-gradient(28deg,transparent 55%,#152c3b 55%);opacity:.7}
+.game-brand{position:absolute;left:65px;top:30px;color:#fff8;font-size:15px;letter-spacing:3px}.game-menu{position:absolute;right:55px;bottom:40px;color:#ffffff88;font-size:12px}.island{position:absolute;left:8px;top:143px;width:18px;height:94px;background:#08090a;border-radius:12px;z-index:7}.portrait .island{left:142px;top:8px;width:94px;height:22px}
+.home{position:absolute;bottom:7px;left:calc(50% - 60px);width:120px;height:4px;background:#ffffffa0;border-radius:4px;z-index:7;pointer-events:none}
+.safe{position:absolute;inset:17px 46px 27px;display:flex;align-items:center;justify-content:center}.portrait .safe{inset:49px 15px 34px}
+.mask{position:absolute;inset:0;background:#00000073;z-index:1}.surface{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;width:100%;height:100%}
+.auth{width:100%;height:100%;background:#eee;border-radius:14px;position:relative;overflow:hidden;color:#555;box-shadow:0 10px 28px #0002}
+.brand-head{position:absolute;top:0;left:0;width:100%;height:43.7px}.brand-head svg{position:absolute;inset:0;width:100%;height:100%}.logo{position:absolute;width:90px;height:30px;object-fit:contain;left:10px;top:2.25px}
+.auth-close{position:absolute;right:0;top:0;width:44px;height:44px;border:0;background:transparent;color:white;font-size:27px;font-weight:200;line-height:1}
+.auth-content{position:absolute;inset:47.7px 9% 8px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px}.number{font-size:28px;line-height:34px;white-space:nowrap;margin:0}.carrier{font-size:12px;color:#999;line-height:16px}
+.login-btn{width:100%;min-height:44px;height:44px;background:#f60;border:0;border-radius:5px;color:#fff;font-size:16px;flex:none}.switch-btn{height:44px;min-height:44px;border:0;background:transparent;color:#666;font-size:13px;padding:0 8px}
+.privacy{font-size:12px;line-height:18px;position:relative;width:100%;padding:6px 0 0 36px;min-height:56px;display:block}.privacy a{color:#00f;text-decoration:none}.check{position:absolute;left:-8px;top:-2px;border:0;background:transparent;width:44px;height:44px;padding:10px}.check span{display:block;width:14px;height:14px;border:1px solid #aaa;border-radius:3px;background:#fff;color:#fff;line-height:12px;font-size:11px}.check.on span{background:#f60;border-color:#f60}
+.update-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;max-height:100%;width:100%}.update{background:#fff;border-radius:10.5px;width:100%;overflow:hidden;position:relative;display:flex;flex-direction:column;min-height:0}.update-head{position:relative;background:linear-gradient(90deg,#ffcc1a,#ffb81a);width:100%;aspect-ratio:530/198;flex:none}.update-head img{display:block;width:100%;height:100%;object-fit:contain}.update-head h3{position:absolute;inset:20% 8% auto;color:#fff;font-size:var(--update-title,19px);line-height:1.3;text-align:center;margin:0}
+.update-body{padding:10px 17px 12px;text-align:center;display:flex;flex-direction:column;min-height:0}.update-copy{overflow:auto;min-height:0}.update-desc{color:#ff590c;font-size:var(--update-desc,15px);line-height:1.5}.update-meta{color:#757575;font-size:var(--update-meta,12px);margin:13px 0;line-height:1.7}.update-btn{background:#41be56;border:0;color:#fff;min-height:44px;width:80%;border-radius:50px;font-size:16px;flex:none;align-self:center;margin-top:12px}
+.round-close{border:1.5px solid #ddd;color:#ddd;width:34px;height:34px;min-height:34px;border-radius:50%;background:transparent;font-size:26px;line-height:1}.close-hit{height:44px;width:44px;display:flex;justify-content:center;align-items:center;flex:none}
+.message{color:#fff;text-align:center;max-width:80%;font-size:14px}.spinner{border:3px solid #ffffff30;border-top-color:#fff;border-radius:50%;width:26px;height:26px;margin:0 auto 16px;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}
+.withdraw{width:min(330px,94%);max-height:100%;overflow:auto;background:#fff;border-radius:14px;padding:20px 16px;color:#454b54;text-align:left}.withdraw h3{font-size:17px;margin:0 0 12px}.withdraw p{font-size:14px;line-height:1.65;margin:0 0 16px}.withdraw-actions{display:flex;gap:12px}.withdraw-actions button{flex:1;min-height:44px;border:0;border-radius:7px;background:#eee;color:#555;font-size:14px}.withdraw-actions button.primary{background:var(--red);color:white}.withdraw .spinner{border-color:#ddd;border-top-color:var(--red)}
+.protocol{width:100%;height:100%;background:white;color:#454b54;display:flex;flex-direction:column}.protocol-nav{background:var(--red);height:48px;color:white;display:flex;align-items:center;justify-content:center;position:relative;flex:none;font-size:17px}.back{position:absolute;left:0;top:0;height:48px;width:44px;border:0;background:none;color:white;font-size:24px}.protocol article{padding:18px 20px;overflow:auto;font-size:13px;line-height:1.9}.protocol h3{font-size:18px}
+.errorbox{text-align:center;color:#ddd;max-width:85%}.errorbox h3{color:#fff;font-size:18px}.errorbox p{font-size:13px}.error-actions{display:flex;gap:12px;justify-content:center;margin-top:20px}.error-actions button{border:1px solid #ffffff40;background:#ffffff12;color:white;border-radius:8px;min-height:44px;padding:0 20px}.error-actions button:first-child{background:#f60;border-color:#f60}
+.annotation{padding:14px 16px;background:#f6f8fb;border-left:3px solid #c52d28;font-size:13px;line-height:1.8;margin-top:20px}.dimensions{font-family:ui-monospace,monospace;font-size:12px;color:#677180}.legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:16px;font-size:12px;color:#5c6572}.dot{width:9px;height:9px;display:inline-block;border-radius:50%;background:#c52d28;margin-right:5px}.toast{position:absolute;z-index:8;left:50%;bottom:45px;transform:translateX(-50%);background:#111d;color:#fff;padding:9px 14px;border-radius:8px;font-size:12px;white-space:nowrap}
+@media(max-width:900px){main{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr;gap:0 18px}aside h2,.notes,.linkrow{grid-column:1/-1}.stage{min-height:250px}header.page{align-items:flex-start}.badge{display:none}}
+</style>
+</head>
+<body>
+<header class="page"><div><h1>iOS 原生界面设计预览</h1><div class="meta">骑士盟 H5 游戏壳 · 对齐 Android 品牌与交互 · 2026-11-02 / v0.2</div></div><span class="badge">设计草案 · 不连接真实服务</span></header>
+<main>
+<aside>
+<h2>预览设置</h2>
+<div><label for="scene">界面状态</label><select id="scene">
+<option value="auth">一键登录 · 未勾选</option><option value="checked">一键登录 · 已勾选</option><option value="protocol">协议详情</option><option value="exchange">业务兑换中</option><option value="h5login">H5 登录回退</option><option value="update">更新提示 · 可关闭</option><option value="force">更新提示 · 强制</option><option value="opening">正在打开更新入口</option><option value="withdraw">隐私撤回 · 确认</option><option value="cleaning">隐私撤回 · 清理中</option><option value="cleanError">隐私撤回 · 清理失败</option><option value="revoked">隐私撤回 · 已完成</option><option value="game">游戏运行 · 页面占位</option><option value="error">页面最终加载失败</option></select></div>
+<div><label for="orientation">设备方向</label><select id="orientation"><option value="landscape">横屏 · 844 × 390pt</option><option value="portrait">竖屏 · 390 × 844pt</option></select></div>
+<div><label for="width">配置宽度 <output id="widthValue">60%</output></label><input id="width" type="range" min="40" max="100" value="60"></div>
+<div><label for="height">授权配置高度 <output id="heightValue">100%</output></label><input id="height" type="range" min="40" max="100" value="100"></div>
+<div class="notes"><strong>默认值说明</strong><br>横屏授权预览用 60% × 100%，便于完整展示 iOS 的最小控件；现有 60% × 75% 可用滑杆检查。竖屏示例用 90% × 65%。<br><br>更新卡片宽度另乘 Android 当前缩放 0.7；此预览为 auto 高度。尺寸过小显示回退状态，不以裁切模拟“适配完成”。</div>
+<div class="linkrow"><a href="iOS原生UI设计规范_ios-native-ui-design.md">UI 规范</a><a href="iOS开发总体方案_ios-development-proposal.md">总体方案</a></div>
+</aside>
+<section class="workspace">
+<div class="toolbar"><span class="state-label" id="stateLabel">一键登录 · 未勾选</span><span class="small">点击面板可检查勾选、协议与返回</span></div>
+<div class="stage" id="stage"><div class="fit" id="fit"><div class="device" id="device"><div class="background"></div><div class="mountains"></div><div class="game-brand">骑士盟 · 游戏</div><div class="game-menu">游戏背景示意</div><div class="island"></div><div class="mask"></div><div class="safe" id="safe"><div class="surface" id="surface"></div></div><div class="home"></div></div></div></div>
+<div class="annotation" id="annotation" aria-live="polite"></div>
+<div class="legend"><span><i class="dot"></i>品牌颜色与结构沿用 Android</span><span>更新仅交接入口，无虚构安装进度</span><span>正式取号内容由阿里云 SDK 提供</span></div>
+<p class="dimensions" id="dimensions"></p>
+</section>
+</main>
+<script>
+const scene=document.querySelector('#scene'),orientation=document.querySelector('#orientation'),wInput=document.querySelector('#width'),hInput=document.querySelector('#height'),surface=document.querySelector('#surface'),device=document.querySelector('#device'),fit=document.querySelector('#fit'),stage=document.querySelector('#stage'),safe=document.querySelector('#safe');
+let selected=false,lastAuth='auth';
+const notes={
+auth:'授权页默认未勾选。普通说明可切换，协议链接单独打开详情。示例号码仅用于设计；正式页面使用 SDK 实际内容。关闭和其他方式恢复 H5 登录。',
+checked:'仅勾选不自动登录。点击登录模拟进入业务兑换；真实产品须经 SDK 取得凭证，再由服务端兑换业务 Token。',
+protocol:'协议详情使用红色导航栏，正文是占位说明；返回恢复授权页和原勾选状态，不自动勾选或取号。',
+exchange:'运营商凭证已取得，仍不表示业务登录成功。无百分比；服务端兑换成功并安全保存 Token 后才能开游戏。',
+h5login:'这里是现有 H5 登录的页面占位。关闭授权、切换方式或兑换失败均创建新的 H5 登录实例；预览不设计或替换现有 H5 内容。',
+update:'黄色头图、白色卡片、绿色按钮和圆形关闭控件沿用 Android。示例宽度应用 0.7 缩放；点击仅演示交接 HTTPS 更新入口，不绑定分发模式。',
+force:'强制状态隐藏关闭；正常返回仍可更新。地址错误或无法打开应提示并放行，不能永久卡住登录。',
+opening:'仅等待系统接受打开 HTTPS 更新入口，没有下载百分比、“已安装”或“立即安装”。预览不实际打开外部网页，分发站点与安装服务不在本次范围。',
+withdraw:'需求已确认：可信 H5 设置入口发起，原生二次确认。取消保留游戏，确认后结束会话并清理本机数据；本预览不会删除任何文件。',
+cleaning:'无百分比、防重复操作。可用左侧状态菜单模拟清理成功或失败；这只是 UI 演示，不执行 SDK、Keychain 或网页数据清理。',
+cleanError:'部分数据清理失败也保持隐私撤回，禁止认证与业务请求；提供重试，重启继续清理任务，不因 privacyAuto=false 自动恢复同意。',
+revoked:'清理完成后显示说明，由用户主动查看协议并重新选择；重新同意后再初始化、生成新设备码和登录。不是服务端账号注销。',
+game:'当前游戏的页面占位。隐私撤回二次确认中点击取消应回到仍在运行的原游戏，不重置登录和存储。',
+error:'加载与自动重试期间静默，最终失败才显示错误码。“应用设置”使用 iOS 公开入口，不能承诺跳转 WLAN 开关。'
+};
+function setScene(value){scene.value=value;render()}
+function toast(message){const old=device.querySelector('.toast');if(old)old.remove();const el=document.createElement('div');el.className='toast';el.textContent=message;device.append(el);setTimeout(()=>el.remove(),2200)}
+function render(){
+ const portrait=orientation.value==='portrait';device.classList.toggle('portrait',portrait);
+ const dw=portrait?390:844,dh=portrait?844:390,space=stage.clientWidth-22,scale=Math.min(space/dw,portrait?.8:1);
+ device.style.transform='scale('+scale+')';fit.style.width=dw*scale+'px';fit.style.height=dh*scale+'px';
+ document.querySelector('#widthValue').textContent=wInput.value+'%';document.querySelector('#heightValue').textContent=hInput.value+'%';
+ const rw=dw-14-(portrait?30:92),rh=dh-14-(portrait?83:44),cw=rw*Number(wInput.value)/100,ch=rh*Number(hInput.value)/100,s=scene.value;
+ document.querySelector('#stateLabel').textContent=scene.selectedOptions[0].textContent;
+ document.querySelector('#annotation').textContent=notes[s];document.querySelector('#dimensions').textContent='示例可用区域 '+rw+' × '+rh+'pt；配置授权 '+Math.round(cw)+' × '+Math.round(ch)+'pt；更新宽 '+Math.round(cw*.7)+'pt。文档数值与实机测量优先。';
+ if(s==='auth'||s==='checked'){
+  lastAuth=s;selected=s==='checked';
+  if(cw<260||ch<320){surface.innerHTML='<div class="message"><h3>请选择其他方式登录</h3><p>H5 登录页面占位</p></div>';document.querySelector('#annotation').textContent='此配置在预览中不能完整容纳必要控件，演示回退 H5。实际产品须按 SDK 真实文本和字体测量决定，不把此处 260×320pt 当成硬编码门槛。';return}
+  surface.innerHTML='<div class="auth" style="width:'+cw+'px;height:'+ch+'px"><div class="brand-head"><svg viewBox="0 0 500 43.7" preserveAspectRatio="none"><path d="M14 0H486Q500 0 500 14V43.7Q250 27.1 0 43.7V14Q0 0 14 0Z" fill="#c52d28"/></svg><img class="logo" src="assets/onekey-login/box_logo.png" alt="骑士盟"><button class="auth-close" aria-label="关闭一键登录">×</button></div><div class="auth-content"><div class="number">138****8000</div><div class="carrier">中国移动提供认证服务</div><button class="login-btn">手机号一键登录</button><button class="switch-btn">使用其他方式登录</button><div class="privacy"><button class="check '+(selected?'on':'')+'" aria-label="同意协议" aria-pressed="'+selected+'"><span>'+(selected?'✓':'')+'</span></button><span class="privacy-copy" role="button" tabindex="0">我已阅读并同意</span> <a href="#protocol">《中国移动服务条款》</a>和<a href="#protocol">《用户协议与隐私政策》</a></div></div></div>';
+  const toggle=()=>{selected=!selected;scene.value=selected?'checked':'auth';render()};
+  surface.querySelector('.check').onclick=toggle;surface.querySelector('.privacy-copy').onclick=toggle;surface.querySelector('.privacy-copy').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle()}};
+  surface.querySelectorAll('.privacy a').forEach(a=>a.onclick=e=>{e.preventDefault();setScene('protocol')});
+  surface.querySelector('.login-btn').onclick=()=>selected?setScene('exchange'):toast('请先阅读并同意相关协议');
+  surface.querySelector('.auth-close').onclick=()=>setScene('h5login');surface.querySelector('.switch-btn').onclick=()=>setScene('h5login');
+ }else if(s==='protocol'){
+  surface.innerHTML='<div class="protocol"><div class="protocol-nav"><button class="back" aria-label="返回授权">‹</button>用户协议与隐私政策</div><article><h3>协议详情示意</h3><p>实际产品加载用户点击的运营商条款或业务协议地址。本页面只展示布局，不构成正式协议。</p><p>返回授权弹窗后保留原勾选状态，不重复创建授权页、不自动登录。</p><p>正式协议须完整可阅读，并明确认证服务、数据使用、保存与删除方式。</p></article></div>';surface.querySelector('.back').onclick=()=>setScene(lastAuth);
+ }else if(s==='exchange'){
+  surface.innerHTML='<div class="message"><div class="spinner"></div>登录中，请稍候…</div>';
+ }else if(s==='h5login'){
+  surface.innerHTML='<div class="message"><h3>请选择其他方式登录</h3><p>现有 H5 登录页面占位</p></div>';
+ }else if(s==='game'){
+  surface.innerHTML='<div class="message"><h3>游戏继续运行</h3><p>当前游戏界面占位</p></div>';
+ }else if(['withdraw','cleaning','cleanError','revoked'].includes(s)){
+  if(s==='withdraw'){
+   surface.innerHTML='<div class="withdraw"><h3>撤回隐私同意</h3><p>撤回后将退出当前游戏，并清理本机登录与游戏存储数据。服务端账号不会因此注销。是否继续？</p><div class="withdraw-actions"><button>取消</button><button class="primary">确认撤回</button></div></div>';
+   surface.querySelector('button:not(.primary)').onclick=()=>setScene('game');surface.querySelector('.primary').onclick=()=>setScene('cleaning');
+  }else if(s==='cleaning'){
+   surface.innerHTML='<div class="withdraw" style="text-align:center"><div class="spinner"></div><p>正在清理本机数据…</p></div>';
+  }else if(s==='cleanError'){
+   surface.innerHTML='<div class="withdraw"><h3>清理尚未完成</h3><p>部分本机数据未能清理，请重试。</p><div class="withdraw-actions"><button class="primary">重试清理</button></div></div>';surface.querySelector('button').onclick=()=>setScene('cleaning');
+  }else{
+   surface.innerHTML='<div class="withdraw"><h3>已撤回隐私同意</h3><p>同意隐私政策后可以重新进入游戏。</p><div class="withdraw-actions"><button>查看协议</button><button class="primary">重新选择</button></div></div>';surface.querySelectorAll('button').forEach(b=>b.onclick=()=>toast(b.textContent==='查看协议'?'展示隐私政策页面，不自动同意':'展示隐私确认页面，由用户主动选择'));
+  }
+ }else if(s==='error'){
+  surface.innerHTML='<div class="errorbox"><h3>页面暂时无法加载</h3><p>请检查网络后重试</p><p>错误码：H5_HTTP_503</p><div class="error-actions"><button>重试</button><button>应用设置</button></div></div>';surface.querySelectorAll('button').forEach(b=>b.onclick=()=>toast(b.textContent==='重试'?'重新开始页面加载':'由系统打开本应用设置'));
+ }else{
+  const uw=cw*.7;if(uw<210){surface.innerHTML='<div class="message">继续登录</div>';document.querySelector('#annotation').textContent='更新卡片过窄，预览演示配置不可用后放行。可增大配置宽度；实际产品按内容测量判断。';return}
+  surface.innerHTML='<div class="update-wrap" style="width:'+uw+'px;--update-title:'+Math.max(18,40*uw/530)+'px;--update-desc:'+Math.max(14,30*uw/530)+'px;--update-meta:'+Math.max(12,18*uw/530)+'px"><div class="update"><div class="update-head"><img src="../android/app/src/main/res/drawable-nodpi/update_header.png" alt=""><h3>邀您体验新版本</h3></div><div class="update-body"><div class="update-copy"><div class="update-desc">发现新版本，体验优化</div><div class="update-meta">版本号：1.1.0<br>更新时间：2026-11-02</div></div><button class="update-btn">'+(s==='opening'?'正在打开…':'立即更新')+'</button></div></div>'+(s==='update'?'<div class="close-hit"><button class="round-close" aria-label="关闭更新">×</button></div>':'')+'</div>';
+  surface.querySelector('.update-btn').onclick=()=>setScene('opening');const close=surface.querySelector('.round-close');if(close)close.onclick=()=>toast('关闭更新，继续登录');
+ }
+}
+scene.onchange=()=>{if(['update','force','opening'].includes(scene.value))wInput.value=orientation.value==='portrait'?100:80;render()};
+orientation.onchange=()=>{wInput.value=orientation.value==='portrait'?90:60;hInput.value=orientation.value==='portrait'?65:100;if(['update','force','opening'].includes(scene.value))wInput.value=orientation.value==='portrait'?100:80;render()};
+wInput.oninput=render;hInput.oninput=render;window.addEventListener('resize',render);render();
+</script>
+</body>
+</html>

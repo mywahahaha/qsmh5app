@@ -122,7 +122,7 @@ H5 登录页可以调用 `requestPhoneLogin` 再次尝试；仍受 `open` 和启
 | --- | --- |
 | `Gameid` | 当前游戏的构建配置 `gameId` |
 | `Gameversion` | 当前实际安装包的构建常量 `gameVersion`，例如 `1.0.1` |
-| `Packagecode` | 当前包的渠道码，未获取时为空；iOS 渠道来源需单独确认 |
+| `Packagecode` | 当前包的渠道码，未获取时为空；iOS 已确认默认空字符串并显式发送 |
 | `Devicetype` | Android 为 `android`；iOS 的枚举值需与服务端确认，不复制 Android 值 |
 | `Devicecode` | 本地设备码，未完成启动隐私同意前为空；iOS 生成和保存规则需单独确认 |
 | `Accountoken` | 请求时从安全存储读取的最新业务 Token，未登录为空；初始化发生于隐私同意前时为空 |
@@ -258,7 +258,7 @@ QSMH5APP.requestPhoneLogin({ scene: "login" }, function (result) {
 
 ## 8. iOS 实施与联调前确认
 
-2026-11-02 已形成 [iOS开发总体方案](iOS开发总体方案_ios-development-proposal.md)、[iOS原生UI设计规范](iOS原生UI设计规范_ios-native-ui-design.md)和[环境测试与签名出包手册](iOS开发环境测试与签名出包手册_ios-environment-testing-release.md)，均为待确认方案，尚无 iOS 工程。共用业务流程继续按本文；iOS 的 SDK 最小字号、控件高度、安全区域及后台恢复按专项草案评审，不能直接照抄 Android 的紧凑布局常量。
+2026-11-02 已形成 [iOS开发总体方案](iOS开发总体方案_ios-development-proposal.md)、[iOS原生UI设计规范](iOS原生UI设计规范_ios-native-ui-design.md)和[环境测试与签名出包手册](iOS开发环境测试与签名出包手册_ios-environment-testing-release.md)。当前已有首期 iOS 工程、真实 SDK 编译适配与认证替身测试，尚未做真实取号和品牌授权页验收；用户将后续通过初始化接口补齐 iOS 认证配置。共用业务流程继续按本文，实际进度见[首期联调记录](iOS首期开发与联调记录_ios-bootstrap-development.md)。
 
 ### 已确定，iOS 需要一致实现
 

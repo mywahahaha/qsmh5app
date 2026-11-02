@@ -1,0 +1,11 @@
+artifacts/
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+Config/LocalOverrides.xcconfig
+Config/Aliyun.local.xcconfig
+Vendor/Aliyun/SDK/
+Vendor/Aliyun/installed.json
+*.mobileprovision
+*.cer

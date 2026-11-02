@@ -1,10 +1,10 @@
 # iOS开发总体方案
 
 - 版本：v0.3，按用户收敛充值范围修订的方案草案；日期：2026-11-02。
-- 项目：qishimeng_h5_sdk；Android 已由用户确认完成真机测试，iOS 当前尚无工程和 SDK 交付包。
-- 本次交付：开发设计、UI 规范、环境与签名出包手册、界面预览；尚未创建 iOS 产品工程。
+- 项目：qishimeng_h5_sdk；Android 已由用户确认完成真机测试。iOS 已创建首期工程，并完成本机 SDK 准备；实际范围及验证见[首期开发与联调记录](iOS首期开发与联调记录_ios-bootstrap-development.md)。
+- 本文保留完整目标设计；首期已实现初始化、隐私、H5 登录、游戏容器和基础 Bridge，后续构建 3 已接入悬浮球与心跳 `floating_ball`，详见[悬浮球记录](iOS悬浮球需求与实现_ios-floating-ball.md)。运营清单 `popup_pages` 等其余功能不能据此标记为完成。
 - 用户明确要求：功能对齐 Android；一键登录、在线更新等原生 UI 保持一致，并形成可供后续开发的文档。
-- 已确认：目标中国国内；用户最新说明采用企业签名，本次开发不考虑分发模式及充值专项；需要隐私撤回；渠道码默认空字符串，并加入原生请求头。游戏由 WKWebView 加载 H5 地址，H5 充值相关跳转统一遵循既有白名单与导航拦截规则。
+- 已确认：目标中国国内；用户最新说明采用企业签名，本次开发不考虑分发模式及充值专项；需要隐私撤回；渠道码从 `.app/packCode` 子目录读取，未找到时为空字符串，并加入原生请求头。游戏由 WKWebView 加载 H5 地址，H5 充值相关跳转统一遵循既有白名单与导航拦截规则。
 - 技术选型、最低系统及其他未确认项见第 13 节。不得将建议默认值视为用户已确认。
 
 ## 1. 推荐路线与阅读顺序
@@ -32,7 +32,7 @@
 | 一键登录 | 阿里云 Android AAR、Android 认证方案 | 阿里云 iOS SDK、独立 Bundle ID 认证方案；业务兑换接口可共用 |
 | 原生更新提示 | 自定义弹窗 | 同品牌自定义弹窗，校验后打开 HTTPS 更新说明/安装引导页 |
 | 下载并安装新版 | 下载 APK、FileProvider、系统安装器 | 本次仅交接更新入口；安装由外部系统流程处理，不自行安装或替换 IPA |
-| 渠道分包 | 修改 APK Signing Block，无需重签 | 本次不开发渠道分包；channelCode 默认空，仍发送 Packagecode Header |
+| 渠道分包 | 修改 APK Signing Block，无需重签 | 沿用用户已有分包脚本；读取 `.app/packCode` 子目录名，缺失为空，仍发送 Packagecode Header |
 | 设备标识 | OAID / ANDROID_ID / DIY | 默认建议隐私同意后生成应用内随机安装标识，不读取 Android 标识 |
 | 应用检测 | Android packageName | 系统 URL Scheme / Universal Link 的有限能力，不支持枚举任意 Bundle ID |
 | 保持亮屏 | FLAG_KEEP_SCREEN_ON | 前台游戏期间设置 isIdleTimerDisabled，结束或退后台恢复 |
@@ -98,7 +98,7 @@ privacyAuto=false 沿用 Android 的当前业务含义：跳过隐私 H5 并本�
 
 ### 4.1.1 隐私撤回（需求已确认，接口为新增设计）
 
-用户已确认需要隐私撤回。在可信 H5 的“账号/隐私设置”提供“撤回隐私同意”；H5 调用新增的 revokePrivacyPolicy 后，由原生展示二次确认框，说明将结束游戏并清理本机数据，只有用户确认才开始执行。当前共用 Bridge 尚未实现此方法，后续与 H5 同步接口并新增 iOS 实现。
+用户已确认需要隐私撤回。在可信 H5 的“账号/隐私设置”提供“撤回隐私同意”；H5 调用 revokePrivacyPolicy 后，由原生展示二次确认框，说明将结束游戏并清理本机数据，只有用户确认才开始执行。iOS 首期已实现，Android 当前注入器没有此方法，H5 按 [JSBridge 清单](../JSBridge方法清单_jsbridge.md) 判断能力。
 
 设计调用为 QSMH5APP.revokePrivacyPolicy({}, callback)，使用既有 Result 包装。用户取消返回 code=0、data=false，完整保留当前游戏与存储；只有清理完成才返回 code=0、data=true。参数非法返回 1001、data=false，执行/清理失败返回 9999、data=false。仅可信且仍有效的隐私设置来源可调用，每次只允许一个确认/清理流程，每笔请求结果最多一次；离开页面不代表用户已同意撤回。
 
@@ -186,7 +186,7 @@ UI 使用 UIKit、Auto Layout 与必要的 CAShapeLayer；网络优先系统 URL
 
 POST 初始化固定地址：https://box.74meng.com/h5_app/init，请求体 {}。Token 自动登录沿用 /h5_app/login_by_token；一键登录兑换取当前 iOS 配置的 exchange_url，body 为 auth_token。URLSession 原生接口注入六项 Header；不能假定 WKWebView 的所有页面、子资源和 JS fetch 自动带这些 Header。
 
-channelCode 在配置缺失时归一化为 ""。初始化、Token 登录、一键登录业务兑换、心跳及后续原生业务 API 统一通过 APIClient 设置 Packagecode；测试既断言 URLRequest 中存在该字段，也核对受控 HTTP 接收端实际收到空值。不得发字符串 "null"、"undefined"、空格占位，或将渠道码伪装成签名类型。getGameInfo 中现有 packageCode 字段同步返回空字符串，不更改共用字段名。本次不做渠道分包或安装后归因。
+channelCode 从安装后 `.app/packCode` 的直接子目录名读取，目录缺失或不可读时归一化为 ""。初始化、Token 登录、一键登录业务兑换、心跳及后续原生业务 API 统一通过 APIClient 设置 Packagecode；测试既断言 URLRequest 中存在该字段，也核对受控 HTTP 接收端实际收到空值。不得发字符串 "null"、"undefined"、空格占位，或将渠道码伪装成签名类型。getGameInfo 中现有 packageCode 字段同步返回同一目录读取结果，不更改共用字段名。沿用用户已有分包脚本，不另实现分包器或安装后归因。
 
 HTTP 非 2xx、缺少 code、code 类型错误、Token 缺失或空白均不能判成功。可选的一键登录配置不可用时回退 H5，不能让关闭状态下的坏配置阻断初始化。所有尺寸必须是有限数，明确拒绝 NaN、Infinity、越界和非法 Center 用法。
 
@@ -223,7 +223,7 @@ HTTP 非 2xx、缺少 code、code 类型错误、Token 缺失或空白均不能�
 | 方法组 | iOS 行为 |
 | --- | --- |
 | agreePrivacyPolicy / rejectPrivacyPolicy | 保持 Result；拒绝后取消认证并转隐私说明，不能程序退出 |
-| revokePrivacyPolicy（新增设计） | 用户已确认需要；可信隐私设置入口触发，按 §4.1.1 清理并结束会话；当前尚无实现 |
+| revokePrivacyPolicy（新增设计） | 用户已确认需要；可信隐私设置入口触发，按 §4.1.1 清理并结束会话；首期已实现，详见开发记录 |
 | requestPhoneLogin / notifyLoginSuccess | 与共用一键登录文档相同的回调边界、成功条件和会话保护 |
 | getAccountToken / getGameInfo / logout | 一致；deviceType 为确认后的 iOS 值，gameVersion 取当前包 |
 | saveGameRole / getGameRole | 一致；角色校验、替换、游戏文档成功后清理；磁盘失败可反馈 |
@@ -288,7 +288,7 @@ iOS UI 的协议字号至少 12pt、号码至少 16pt、登录按钮至少 40pt 
 
 本次流程：原生弹窗 → 校验并打开 HTTPS 更新入口 → 返回时保留正常提示状态 → 实际新包启动后重新判断版本。弹窗保留黄色头图、绿色按钮、圆形关闭控件；不展示不存在的下载百分比和“立即安装”。具体签名模式、安装服务和分发适配另行处理。
 
-渠道码已定：channelCode 默认 ""；HTTP Header 始终包含 Packagecode，Bridge 的 packageCode 与其一致。配置支持未来填写合法值，但本次不开发渠道分包、归因、签名后改包或渠道切换界面。修改已签名 Bundle 会破坏签名。
+渠道规则已更新：从 IPA 的 `Payload/*.app/packCode/渠道目录名/` 对应安装目录读取，未找到或读取失败为 ""；HTTP Header 始终包含 Packagecode，Bridge 的 packageCode 与其一致。用户已有分包脚本，本次只完善原生读取，不开发归因或渠道切换界面。样本空目录分包及本次临时渠道目录校验均验签通过，分包最终产物仍须单独检查。具体枚举和容错规则见 JSBridge 清单第 8.2 节。
 
 CFBundleShortVersionString 用 x.y.z；CFBundleVersion 每次构建递增。成品清单同时记录业务版本、构建号、SDK 版本、Git 提交与配置摘要，便于两端问题对应。
 
@@ -343,6 +343,8 @@ CFBundleShortVersionString 用 x.y.z；CFBundleVersion 每次构建递增。成�
 
 ## 13. 开发前决策表
 
+2026-11-02 实施补充：用户已指定首个游戏 `gameId=29`、Bundle ID `com.un74meng.yjhcmc`、横屏和测试游戏地址。本轮暂不做真机测试，用户在获得签名包后自行安装；一键登录配置后续由初始化接口补齐。已发现的现有签名材料实际为 Ad Hoc，配对私钥尚待提供，不将企业签名意向当作已具备的材料。
+
 | 编号 | 事项 | 已确认结论或建议默认 | 最晚影响节点 |
 | --- | --- | --- | --- |
 | D01 | 地区与分发范围 | 已确认中国国内；最新企业签名说明覆盖此前开发/Ad Hoc 选项；本次排除分发模式开发 | 已明确范围，不阻塞功能开发 |
@@ -353,7 +355,7 @@ CFBundleShortVersionString 用 x.y.z；CFBundleVersion 每次构建递增。成�
 | D06 | 服务端 iOS 身份与配置 | ios 枚举、随机安装码、独立密钥与 HTTPS 更新入口待联调；Packagecode 默认空且发送已确认 | S1 联调 |
 | D07 | 阿里云 iOS SDK 包与认证方案 | 官方锁版本；先跑最小设备集成 | S0 |
 | D08 | UI 尺寸歧义 | 更新沿用 Android 当前 0.7 缩放；授权遵守 iOS SDK 最小字号与可点区域 | S3 前确认视觉稿 |
-| D09 | 渠道码 | 已确认默认空字符串；原生业务请求 Header 携带 Packagecode；Bridge packageCode 一致；本次不做渠道分包 | S1 请求契约 |
+| D09 | 渠道码 | 已实现从 `.app/packCode` 直接子目录名读取；缺失为空；Header 与 Bridge 同值；沿用现有分包脚本 | S1 请求契约 |
 | D10 | 是否需要 Windows 操作员远程出包 | 首期 Mac 本地脚本；后续 Windows 提交任务到受控 Mac | S4 之后 |
 | D11 | 隐私撤回 | 已确认需要；可信 H5 设置入口，新增 revokePrivacyPolicy；本机清理及恢复设计详见 §4.1.1，后续同步接口文档 | S1 H5/原生契约 |
 

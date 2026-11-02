@@ -1,0 +1,5 @@
+#include "Base.xcconfig"
+#include? "Aliyun.local.xcconfig"
+SWIFT_OPTIMIZATION_LEVEL = -O
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) $(QSM_ALIYUN_CONDITION)
+INFOPLIST_FILE = Config/Info.plist

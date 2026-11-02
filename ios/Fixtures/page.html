@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>七拾梦本地联调</title><style>
+body{font:16px -apple-system,sans-serif;margin:0;background:#f6f4f1;color:#262626;padding:18px 26px}h1{font-size:22px;margin:8px 0}p{margin:10px 0}
+.tag{color:#9f302b;font-size:13px}button,a{display:inline-block;font:inherit;padding:12px 16px;margin:5px 8px 5px 0;border:0;border-radius:8px;background:#c52d28;color:#fff;text-decoration:none}#result{white-space:pre-wrap;background:white;padding:10px;border-radius:8px;min-height:22px}section{display:none}section.active{display:block}
+</style></head><body>
+<div class="tag">Debug-Local · 测试页面与虚构账号</div><h1 id="title"></h1><p id="ready">等待原生 Bridge</p>
+<section id="agreement"><p>此页面仅验证隐私流程；生产环境使用服务端正式协议。</p><button onclick="call('agreePrivacyPolicy',{})">同意并继续</button><button onclick="call('rejectPrivacyPolicy',{})">拒绝</button><button onclick="call('getGameInfo',{},showInfo)">检查隐私前信息</button></section>
+<section id="login"><p>测试账号不连接生产登录接口。</p><button onclick="call('notifyLoginSuccess',{accountToken:'fixture-h5-token'})">使用测试账号登录</button><button onclick="call('requestPhoneLogin',{})">尝试一键登录</button><button onclick="call('getLocalStorage',123)">校验错误参数</button></section>
+<section id="game"><p id="counter">游戏计数：0</p><button onclick="document.getElementById('counter').textContent='游戏计数：'+(++count)">增加游戏计数</button><button onclick="call('openMiniWindow',{page:'web_welfare'})">打开福利窗口</button><button onclick="call('getGameInfo',{},showInfo)">读取游戏信息</button><button onclick="call('saveLocalStorage',{key:'fixture-key',value:42})">保存测试数据</button><button onclick="call('getLocalStorage',{key:'fixture-key'})">读取测试数据</button><button onclick="call('logout',{})">退出登录</button><button onclick="call('revokePrivacyPolicy',{})">撤回隐私同意</button><button onclick="call('changeGameUrl',{url:gameURL()})">切换游戏地址</button><button onclick="call('closePage',{})">关闭游戏</button>__FLOATING_CONTROLS__<a href="http://127.0.0.1:18740/evil">尝试跨来源导航</a></section>
+<section id="welfare"><p>关闭后应保留游戏原有文档和计数。</p><button onclick="call('closePage',{})">返回游戏</button>__WELFARE_CONTROLS__</section>
+<p id="result" role="status">尚无操作结果</p>
+<script>
+var page='__PAGE__', count=0;
+document.getElementById(page).className='active';
+document.getElementById('title').textContent={agreement:'隐私协议（本地测试）',login:'H5 登录（本地测试）',game:'游戏页面（本地测试）',welfare:'福利窗口（本地测试）'}[page];
+function call(method,args,callback){if(!window.QSMH5APP){document.getElementById('result').textContent='Bridge 尚未就绪';return}QSMH5APP[method](args,function(r){document.getElementById('result').textContent='结果：'+r.code+' '+JSON.stringify(r.data);if(callback)callback(r)})}
+function showInfo(r){if(r.code!==0)return;document.getElementById('result').textContent='gameId='+r.data.gameId+' deviceType='+r.data.deviceType+' '+(r.data.deviceCode?'设备码已生成':'设备码为空')+' '+(r.data.accountToken?'已登录':'未登录')+' packageCode='+r.data.packageCode}
+function gameURL(){var url=new URL('/pages/game',location.origin);url.search=location.search;url.searchParams.set('changed','1');return url.href;}
+function ready(){document.getElementById('ready').textContent='Bridge 已就绪';}
+if(window.QSMH5APP)ready();else window.addEventListener('QSMH5APPReady',ready,{once:true});
+</script></body></html>

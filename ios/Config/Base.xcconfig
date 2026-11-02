@@ -1,0 +1,20 @@
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+SWIFT_VERSION = 5.0
+TARGETED_DEVICE_FAMILY = 1
+MARKETING_VERSION = 1.0.1
+CURRENT_PROJECT_VERSION = 3
+PRODUCT_BUNDLE_IDENTIFIER = com.un74meng.yjhcmc
+QSM_GAME_ID = 29
+QSM_DISPLAY_NAME = 全民红月
+QSM_ORIENTATION = UIInterfaceOrientationLandscapeLeft
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+QSM_ENABLE_ALIYUN = NO
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+SWIFT_STRICT_CONCURRENCY = targeted
+CODE_SIGN_STYLE[sdk=iphonesimulator*] = Manual
+CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
+CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*] = Config/Simulator.entitlements
+AD_HOC_CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = YES
+// 本机团队等覆盖值，不提交。最终身份已由用户指定，不自动沿用其他项目身份。
+#include? "LocalOverrides.xcconfig"

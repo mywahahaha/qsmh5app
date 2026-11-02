@@ -3,8 +3,8 @@
 ## 文档信息
 
 - 项目：qishimeng_h5_sdk
-- 文档版本：v0.14
-- 更新日期：2026-10-29
+- 文档版本：v0.17
+- 更新日期：2026-11-02
 - 状态：业务规则已对齐需求文档；Bridge 签名仍需 Android/H5 联调确认
 
 ## 1. 概述与通用约定
@@ -61,6 +61,7 @@ QSMH5APP.getAccountToken({}, function (result) {
 | --- | --- | --- | --- |
 | `agreePrivacyPolicy` | H5 → 原生 | 隐私协议 | 同意隐私协议 |
 | `rejectPrivacyPolicy` | H5 → 原生 | 隐私协议 | 清除本地同意状态并退出应用 |
+| `revokePrivacyPolicy` | H5 → 原生 | 隐私协议 | iOS 首期新增：原生确认后撤回并清理，见第 7 节；不代表 Android 已实现 |
 | `requestPhoneLogin` | H5 → 原生 | 登录 | 唤起手机一键登录 |
 | `notifyLoginSuccess` | H5 → 原生 | 登录 | H5 登录成功通知，回传 accountToken |
 | `getAccountToken` | H5 → 原生 | 登录 | 获取本地缓存的 accountToken |
@@ -179,7 +180,7 @@ QSMH5APP.logout({}, function (result) {
   - `gameId`：游戏出包时指定、APP 本地保存的整数游戏 ID。
   - `gameVersion`：游戏出包时指定、APP 本地保存的版本号。
   - `accountToken`：登录成功后安全存储的登录凭证；未登录时为空字符串。
-  - `deviceType`：客户端类型，本期固定为 `android`。
+  - `deviceType`：客户端类型，Android 返回 `android`，iOS 返回 `ios`。
   - `deviceCode`：设备码；未同意隐私协议时为空字符串。
 
 ```js
@@ -237,6 +238,10 @@ QSMH5APP.getGameRole({ gameId: 266 }, function (result) {
 - 返回：`Result`。
 
 原生按图标状态变化更新图像：如果悬浮球已存在且目标图标与当前图标相同，不重新加载图标，避免闪动。只改变显隐时也不重载图标。宽高和位置由初始化 `floatball` 配置提供；H5 调用此方法不改变尺寸或位置。
+
+Android 与 iOS 均已实现此方法，H5 不需要按客户端分支调用。`show/active` 必须为布尔值；成功返回 `code=0,data=true`，缺少初始化悬浮球配置返回 `code=0,data=false`，iOS 参数无效返回 `1001,data=false`。福利在游戏后方时不影响球；福利置顶才临时隐藏，游戏置顶或福利关闭后按最近一次有效 Bridge/心跳状态恢复。心跳字段名为 `data.floating_ball`，初始化字段名仍为 `data.floatball`。
+
+iOS 宽高及绝对垂直距离采用 pt，水平偏移沿用 360 宽设计基准，悬浮容器为 safeArea；容器尺寸变化按初始化配置重新布局，当前会话普通显隐变化保留拖动位置。详见 [iOS悬浮球对齐记录](docs/iOS悬浮球需求与实现_ios-floating-ball.md)。
 
 ```js
 QSMH5APP.setFloatingBall({ show: true, active: false }, function (result) {
@@ -454,3 +459,90 @@ QSMH5APP.off("onAccountTokenChanged", onAccountTokenChanged);
 
 - Android/H5 联调确认最终方法签名、参数字段、返回码和回调时机。
 - 确认原生主动事件清单是否需要页面生命周期类事件。
+
+## 7. iOS首期实现补充
+
+本节仅记录 iOS 已实现边界，Android 前述行为不因此改变。当前工程及命令见 [iOS开发指南](ios/开发指南_development.md)。
+
+- 命名空间、异步 `Result`、`QSMH5APPReady` 保持一致，原生传输使用 WKWebView；仅配置中的可信主 frame 可调用，来源按协议、主机、端口精确匹配，并绑定文档、实例和会话代次。
+- `getGameInfo.deviceType` 在 iOS 为 `ios`；`packageCode` 从安装包 `.app/packCode/渠道目录名` 读取，未找到时为 `""`；详见第 8.2 节。隐私同意前设备码和 Token 为空；设备码使用应用内随机安装标识的 MD5 格式，具体后端业务兼容仍需后续设备联调。
+- `agreePrivacyPolicy` / `rejectPrivacyPolicy` 仅当前隐私选择流程的 `web_agreement` 可调用，成功均回 `Result`、`data={}`。iOS 拒绝后显示原生隐私说明和重新选择入口，不调用退出进程。
+- `notifyLoginSuccess` 仅当前登录流程的 `web_login` 可调用；安全持久化成功并送达回调后才切游戏。写入失败返回 `9999`、`data=false`。
+- 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、changeGameUrl 及通用存储。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
+- `requestPhoneLogin` 在关闭时返回 `3003`；开启但方案/SDK/宿主不可用时返回 `3001` 并保留/恢复 H5。展示成功只回一次 `code=0,data=true`，兑换成功由原生独立处理，不再次回调原请求。
+- 已支持 `setFloatingBall` 的显隐/激活、纵向拖动、点击福利窗口、福利覆盖后恢复，以及心跳 `floating_ball` 同步；心跳运营窗口清单 `popup_pages` 尚未接入。
+- 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理；`on/off` 在两端均为空实现，当前不发送预留事件。
+
+### revokePrivacyPolicy（iOS）
+
+```js
+QSMH5APP.revokePrivacyPolicy({}, function (result) {
+  // data=false：用户取消或失败；须同时检查 code。
+  // data=true 且 code=0：本机清理已完成，原生随后关闭业务页面。
+});
+```
+
+仅已同意隐私、处于当前有效游戏会话的可信页面可发起。原生展示确认框，取消为 `code=0,data=false`，不改变游戏和数据；确认后先保存 revoked/清理任务标记，停止当前认证与会话，清理本 App Token、随机标识、通用存储及 Web 数据，再回 `code=0,data=true` 并显示隐私说明。
+
+参数或阶段不合法为 `1001,data=false`；保存或清理失败为 `9999,data=false`，保持撤回/待清理状态并提供重试。进程中断后继续清理；`privacyAuto=false` 不能覆盖撤回状态，只有用户主动重新选择并明确同意后恢复。普通 logout 保留隐私状态和通用存储，与撤回不同。此操作不代表服务端账号删除。
+
+
+## 8. Android 与当前 iOS 的 H5 兼容性核对（2026-11-02）
+
+### 8.1 结论与公共调用
+
+**基础接口可以使用同一份 H5 调用代码，当前完整能力尚不等价。** 本节对照 Android 的 `BridgeScript.kt` / `BridgeActions.kt` 和 iOS 的 `bridge.js` / `AppCoordinator.swift` 源码核对；Android 本轮未修改、未重新构建或真机验证。
+
+- 两端均使用 `window.QSMH5APP.method(args, callback)`，支持无参方法省略参数对象；正常参数按本文传入对象，批量存储传数组。
+- 回调都接收 `{code, msg, data}`。先判断 `code === 0`，再读取 `data`；不要依赖 `msg` 的固定文本。
+- 两端均在注入后发送 `QSMH5APPReady`。页面先检查全局对象，尚未就绪再监听事件，避免错过已发出的事件。
+- H5 不应直接调用 `QSMNative.postMessage`、`window.webkit.messageHandlers` 或 `__QSMH5APP_CALLBACK__`；这些是各端内部传输协议，签名不同。
+- [公共 Promise/Axios 包装](示例/qsm-jsbridge.js) 可复用，无需按系统拆分；Header 的 `Devicetype`、`Packagecode` 必须取 `getGameInfo` 的实际返回值，不能写死 `android` 或渠道码。原生 Header 仅用于原生业务请求；H5 的 fetch/Axios 需自行设置，不会自动继承原生 Header。
+
+```js
+function initializeH5Bridge() {
+  QSMH5APP.getGameInfo({}, function (result) {
+    if (result.code !== 0) return;
+    var info = result.data;
+    // 基础登录、Token、存储、福利窗口等继续调用同一套 QSMH5APP 接口。
+    // 悬浮球调用在两端通用；角色、按安卓包名打开应用当前仅 Android 支持。
+    var supportsAndroidFeatures = info.deviceType === 'android';
+    // 按业务使用 supportsAndroidFeatures，并始终处理非零 code。
+  });
+}
+if (window.QSMH5APP) initializeH5Bridge();
+else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
+```
+
+### 8.2 iOS 渠道目录协议
+
+- IPA 内枚举 `Payload` 直接下级所有 `.app` 目录，再找各目录的 `packCode`，只取 `packCode` 的直接下级目录名称。例如 `Payload/QSMH5App.app/packCode/1-218/` 得到 `1-218`；应用目录名称不固定。
+- 安装后系统已解包 IPA，原生从主 Bundle 的父目录枚举同层 `.app`，不在沙盒中寻找原始 `.ipa` 或依赖字面量 `Payload` 路径。
+- 无目录、目录无法读取、路径实际是文件、只有普通文件等情况均返回空字符串，不报初始化失败，不阻塞登录、游戏等业务。不回退读取旧 Info.plist 渠道字段。
+- 不跟随符号链接；不限制渠道码的业务格式，但控制字符或纯空白名称不作为有效渠道。多个候选时按 `.app` 名称、渠道目录名称的升序选第一个有效目录，建议分包只保留一个渠道目录。
+- 启动时读取一次，`getGameInfo.data.packageCode` 和原生六项 Header 中的 `Packagecode` 使用同一 `GameIdentity` 值；隐私同意前也可返回非个人信息的渠道码。未分包母包两处均为 `""`，请求仍正常发送。
+- 仅给旧母包添加目录不会更新旧版原生代码；需要使用本次修复后重新构建的母包再次分包。分包后应检查最终签名和目录是否保留。
+
+### 8.3 已支持方法及差异
+
+| 方法/行为 | Android 当前源码 | iOS 当前实现 | H5 处理 |
+| --- | --- | --- | --- |
+| `getGameInfo` / `getAccountToken` | 返回游戏信息/Token 对象 | 同字段；`deviceType=ios`，设备码算法不同 | 调用通用；不自行推导设备码，不写死平台和渠道 |
+| `agreePrivacyPolicy` | 保存同意后继续 | 仅当前协议实例、协议阶段可调用 | 在协议页按同一接口调用 |
+| `rejectPrivacyPolicy` | 清状态后退出应用 | 回 `code=0,data={}` 后保留原生说明与重新选择入口 | 不自行跳游戏；无需等待应用退出 |
+| `notifyLoginSuccess` | 成功 `data=true` | 本次已对齐为 `data=true`，仅当前登录实例和登录阶段接受 | 通用；在登录页传 `accountToken` |
+| `requestPhoneLogin` | 展示成功 `data=true`，关闭返回 `3003` | 相同关键语义；真实 iOS 取号尚待配置和设备联调 | 通用；成功只代表授权页展示，不代表登录完成 |
+| `logout` | `data=true`，保留隐私及通用存储 | 同语义，旧会话失效 | 通用；由原生继续登录流程 |
+| `saveLocalStorage` / `getLocalStorage` | 保存布尔结果、读取字符串 | 同结构；本次对齐 JS 中非字符串/数字值的归一化 | 通用；高精度、极大或极小数值建议先传字符串，避免两端原生数值格式差异 |
+| `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 本次对齐成功 `data=true`；只支持游戏阶段的 `web_game` / `web_welfare` | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
+| `closePage` | 关闭当前实例，成功 `data=true` | 本次对齐成功 `data=true`；仅游戏/福利实例，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
+| `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | 使用与配置同 origin 的 HTTPS URL 可共用；成功仅表示接受导航 |
+| `setFloatingBall` | 已实现，福利置顶临时隐藏 | 已实现，同显隐/激活及恢复规则 | 调用通用；传布尔 `show/active`，缺初始化配置时 `code=0,data=false` |
+| `saveGameRole` / `getGameRole` | 已实现 | 尚未实现，返回非零错误 | 当前按 `deviceType` 隐藏 iOS 相关入口或提供 H5 自身降级 |
+| `isAppInstalled` / `openApp` | 接受安卓包名，受系统可见性限制 | 尚未实现，返回非零错误 | 当前仅 Android 使用；不能把安卓包名直接用于 iOS |
+| `revokePrivacyPolicy` | 当前注入器没有此方法 | 已实现原生确认和清理 | iOS 专属；先判断方法存在再调用 |
+| `on` / `off` | 空实现 | 空实现 | 不依赖 Token/生命周期预留事件；`QSMH5APPReady` 是 window 事件，独立有效 |
+
+iOS 即使尚未实现某项业务，也可能保留同名函数并回非零 `code`，因此仅用 `typeof QSMH5APP.saveGameRole === 'function'` 不能判断功能已可用。未知/未实现能力的错误码目前两端也不完全相同，统一以非零失败处理；不要将 `data=false` 一概当作业务不存在或应用未安装。
+
+无效参数的宽容程度和错误 `data` 形态并不完全一致。正常 H5 只使用本文约定的参数形态；失败时先判断 `code`，不要继续按成功数据结构解包。

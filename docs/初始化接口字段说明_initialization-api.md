@@ -20,11 +20,13 @@
 | `data.jumpDomain` | string[] | 游戏内跳转到外部浏览器的精确主机白名单；不用于更新地址校验或 Bridge 来源校验 |
 | `data.aliyunOnekeyConfig` | object | 阿里云一键登录配置，`open=1` 开启；完整子字段、默认值、样式与 iOS 参考见[一键登录独立需求](阿里云一键登录独立需求_aliyun-onekey-login.md) |
 | `data.popupInterval` | object | 运营心跳地址 `url` 及秒数间隔 `interval` |
-| `data.floatball` | object | 悬浮球初始显隐、图片、尺寸与位置，Android 规则详见下节 |
+| `data.floatball` | object | 悬浮球初始显隐、图片、尺寸与位置，Android 规则及 iOS 适配详见下节 |
 | `data.privacyAuto` | boolean | 尚未同意隐私时是否先显示协议页面；`false` 跳过并本地标记已同意 |
 | `data.h5Pages` | object | 页面配置，以 `agreement/login/welfare/game` 映射页面实例及布局 |
 
-## 悬浮球字段 `data.floatball`（安卓）
+## 悬浮球字段 `data.floatball`
+
+本节尺寸换算默认描述 Android；iOS 使用相同字段、优先级和运行状态，平台坐标映射见下方“iOS 适配”。
 
 ```json
 {
@@ -70,6 +72,17 @@
 | 仅 `bottom=20` | 840px | 球体下边缘距底 60px，即 20dp |
 | 仅 `bottom=0` | 900px | 球体贴底 |
 | 仅 `top=0.99` | 900px | 计算值 990px 限制为完整可见位置 |
+
+### iOS 适配
+
+- `width/height` 为正整数，直接映射 pt，不乘屏幕倍率、不按窗口宽度缩放；`left/right` 仍按容器宽度 `W / 360` 缩放，left 优先，默认 right=0。
+- 悬浮层采用当前 safeArea，`H` 为该容器完整高度，`h` 为已限制到容器内的球体高度，单位均为 pt。`0 < 值 < 1` 时 `d = 值 × H`，其余合法值直接为 pt；top 优先（含 0），仅 bottom 时 `y = H - h - d`。坐标 clamp 后向下取整，不再额外叠加安全区边距。
+- 仅纵向拖动，普通显隐和图标切换保留本会话位置；容器尺寸变化按原配置重算。图片等比例显示，iOS 当前 GIF 使用首帧；Android 本次更新已支持 GIF 动画，iOS 动画播放尚未同步。
+- 登录有 Token 且游戏主文档提交后才显示；福利置顶临时隐藏，关闭福利或游戏置顶按最后有效 `show/active` 恢复。退出、关闭游戏和重新初始化复位初始 show、active=false。
+- `popupInterval` URL 有效且 interval 为正整数时，在球首次实际显示后等待完整间隔，POST `{}`，附六项 Header；一次完成再计下一周期。隐藏或福利遮挡后继续轮询；退出/关闭游戏停止并丢弃旧响应。iOS 退后台暂停，回前台重新等待完整周期，已启动会话即使球隐藏也可恢复轮询。
+- 本轮 iOS 仅处理成功响应 `data.floating_ball={show:boolean,active:boolean}`；缺失或无效状态保留旧值，`popup_pages` 尚未实现，不代表运营窗口同步完成。
+
+完整需求对照及测试见 [iOS悬浮球记录](iOS悬浮球需求与实现_ios-floating-ball.md)。
 
 ### 为什么宽高与 PC 的同数字像素观感不同
 

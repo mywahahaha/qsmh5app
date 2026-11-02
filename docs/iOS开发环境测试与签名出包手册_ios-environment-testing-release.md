@@ -2,9 +2,9 @@
 
 - 版本：v0.3，按用户收敛充值范围修订的筹备手册；日期：2026-11-02。
 - 对应：[总体方案](iOS开发总体方案_ios-development-proposal.md)和[UI设计规范](iOS原生UI设计规范_ios-native-ui-design.md)。
-- 当前仓库没有 iOS 工程。本文件里的 ios/ 路径、Scheme、脚本和 xcodebuild 命令是后续工程应提供的约定，当前不能直接运行；本次 Windows 环境未执行 Xcode、签名、iOS 模拟器或真机验证。
+- 当前已创建 `ios/QSMH5App.xcodeproj`，提供共享 Scheme、本地测试和归档脚本。本文件保留完整目标手册；实际已实现的配置、命令和测试以 [iOS开发指南](../ios/开发指南_development.md)及[首期联调记录](iOS首期开发与联调记录_ios-bootstrap-development.md)为准。
 - 用户已确认：中国国内、最新说明采用企业签名；本次开发不考虑分发模式。本文将开发环境、功能测试、基础签名构建列为本次范围，分发方式比较及上架资料只作后续参考，不默认 App Store + TestFlight。
-- 已确认忽略充值专项、需要隐私撤回、渠道码默认空字符串并发送 Packagecode Header；原生只加载 H5 游戏地址，H5 相关跳转遵循统一白名单与导航拦截。尚未安装真实 iOS SDK 或验证签名资料。
+- 已确认忽略充值专项、需要隐私撤回、渠道目录读取失败默认空字符串并发送 Packagecode Header；原生只加载 H5 游戏地址，H5 相关跳转遵循统一白名单与导航拦截。阿里云 iOS 2.14.19 已在本机安装并编译链接；最新证书、p12 与 h5App 描述文件已匹配，Ad Hoc IPA 已导出并通过验签（6 台登记设备）。本轮用户自行安装测试，不执行真机验收。
 
 ## 1. 人员与开工材料
 
@@ -26,7 +26,7 @@
 
 | 项目 | 最低可工作建议 | 更合适的团队配置 |
 | --- | --- | --- |
-| 主机 | 支持所选 Xcode 的 Apple Silicon Mac | Mac mini / MacBook，M 系列，24GB+ 内存 |
+| 主机 | 支持所选 Xcode 的 Mac；本机 Intel 已通过基础编译与模拟器测试 | Mac mini / MacBook，M 系列，24GB+ 内存 |
 | 内存 | 16GB | 24–32GB，便于并行模拟器与构建 |
 | 存储 | 512GB SSD，空闲至少 100GB | 1TB；给 Xcode、模拟器、DerivedData 和归档预留空间 |
 | 网络 | 可访问 Apple、阿里云、Git 和测试服务 | 稳定宽带；真机另有蜂窝数据 |
@@ -72,7 +72,7 @@ security find-identity -v -p codesigning
 
 Info.plist / entitlements 至少核对：Bundle ID、版本/构建号、显示名、方向、设备族、ATS、允许查询的 Scheme、是否需要 Associated Domains、用途描述、Keychain 能力和 PrivacyInfo.xcprivacy。没有实际需求不加推送、后台音频、位置、App Groups 或全量应用探测。
 
-channelCode 缺失时归一化为 ""；初始化、Token 登录、业务兑换、心跳及后续原生业务请求必须显式设置 Packagecode。测试捕获 URLRequest 和受控服务请求，区分“字段存在且为空”与“未发送字段”；Bridge 的 packageCode 也返回 ""。本次不要求渠道分包脚本或发行模式参数。
+channelCode 从 `.app/packCode` 的直接子目录名读取，目录缺失或不可读时归一化为 ""；初始化、Token 登录、业务兑换、心跳及后续原生业务请求必须显式设置 Packagecode。测试捕获 URLRequest 和受控服务请求，区分“字段存在且为空”与“未发送字段”；Bridge 的 packageCode 使用同一读取值；同时验证渠道 `1-218` 的非空值链路。沿用用户已有分包脚本，不新增发行模式参数。
 
 ## 3. 测试环境与矩阵
 
@@ -119,7 +119,7 @@ channelCode 缺失时归一化为 ""；初始化、Token 登录、业务兑换�
 12. WKWebView 进程终止、内存压力、长时间后台、断网恢复及 Cookie/网页音频恢复。
 13. Release 包日志、隐私资源、资源图标、签名、设备可安装性、覆盖升级、重装行为。
 14. 通用导航拦截：主文档、重定向、target=_blank/window.open、外部 Scheme 的允许与拒绝；来源、目标白名单和 Bridge 权限隔离。H5 充值相关地址按相同规则处理，不增加专属测试订单或业务验收。
-15. 每类原生 API 均发送 Packagecode 空值 Header；配置省略时仍为空，拒绝 null/undefined/控制字符，Bridge packageCode 一致。
+15. 每类原生 API 均发送 Packagecode Header；有渠道目录时返回目录名，缺失时为空，拒绝 null/undefined/控制字符，Bridge packageCode 一致。
 
 ### 3.4 测试记录模板
 

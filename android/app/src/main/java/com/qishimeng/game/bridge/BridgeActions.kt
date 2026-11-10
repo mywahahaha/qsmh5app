@@ -25,7 +25,8 @@ class BridgeActions(
     private val onPrivacyAgreed: () -> Unit,
     private val onLogout: () -> Unit,
     private val onPrivacyRejected: () -> Unit,
-    private val onPhoneLoginFallback: () -> Unit
+    private val onPhoneLoginFallback: () -> Unit,
+    private val changeScreenMode: (Any?) -> Boolean
 ) {
     // 第二个参数由 JS 执行完成后调用，避免先销毁登录 WebView 导致成功回调丢失。
     fun dispatch(method: String, args: Any?, completion: (BridgeResult, () -> Unit) -> Unit) {
@@ -98,6 +99,7 @@ class BridgeActions(
             }
             "getAccountToken" -> BridgeResult(0, "ok", mapOf("accountToken" to tokenStore.token.orEmpty()))
             "getGameInfo" -> BridgeResult(0, "ok", gameInfo().forBridge(privacyStore.isAgreed()))
+            "changeScreenmode" -> BridgeResult(0, "ok", changeScreenMode(args["mode"]))
             "saveGameRole" -> BridgeResult(0, "ok", roleStore.save(args))
             "saveLocalStorage" -> BridgeResult(0, "ok", localStorage.save(arguments))
             "getLocalStorage" -> BridgeResult(0, "ok", localStorage.get(args.string("key")))

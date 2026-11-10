@@ -6,7 +6,7 @@ import org.junit.Test
 class BridgeScriptTest {
     @Test
     fun publishesAllContractMethodsAndUsesCallbackResults() {
-        listOf("getAccountToken", "getGameInfo", "closeMiniWindow", "changeGameUrl", "saveGameRole", "getGameRole", "notifyLoginSuccess").forEach {
+        listOf("getAccountToken", "getGameInfo", "changeScreenmode", "closeMiniWindow", "changeGameUrl", "saveGameRole", "getGameRole", "notifyLoginSuccess").forEach {
             assertTrue(BridgeScript.SOURCE.contains(it))
         }
         assertTrue(BridgeScript.SOURCE.contains("__QSMH5APP_CALLBACK__"))

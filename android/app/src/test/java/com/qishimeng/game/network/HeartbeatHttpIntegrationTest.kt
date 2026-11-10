@@ -35,19 +35,20 @@ class HeartbeatHttpIntegrationTest {
                         flush()
                     }
                     ApiRequest(requestLine[0], requestLine[1], requestBody,
-                        listOf("Gameid", "Devicecode", "Packagecode", "Devicetype", "Accountoken", "Gameversion")
+                        listOf("Gameid", "Devicecode", "Packagecode", "Devicetype", "Accountoken", "Gameversion", "Notchscreen", "Screenmode")
                             .associateWith { headers[it.lowercase()].orEmpty() })
                 }
             }
             val result = ApiClient().postHeartbeat("http://127.0.0.1:${server.localPort}/configured-heartbeat?scene=hall",
-                GameInfo("channel-test", 266, "1.2.3", "session-test-token", "android", "device-test"), true)
+                GameInfo("channel-test", 266, "1.2.3", "session-test-token", "android", "device-test", notchScreen = 1, screenMode = "horizontal"), true)
 
             val request = received.get(5, TimeUnit.SECONDS)
             assertEquals("POST", request.method)
             assertEquals("/configured-heartbeat?scene=hall", request.url)
             assertEquals("{}", request.body)
             assertEquals(mapOf("Gameid" to "266", "Devicecode" to "device-test", "Packagecode" to "channel-test",
-                "Devicetype" to "android", "Accountoken" to "session-test-token", "Gameversion" to "1.2.3"), request.headers)
+                "Devicetype" to "android", "Accountoken" to "session-test-token", "Gameversion" to "1.2.3",
+                "Notchscreen" to "1", "Screenmode" to "horizontal"), request.headers)
             assertEquals(emptyList<Any>(), result.popupPages)
             assertEquals(FloatingBallHeartbeat(true, true), result.floatingBall)
         } finally {

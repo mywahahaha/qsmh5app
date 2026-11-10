@@ -5,10 +5,15 @@ var fs = require('node:fs');
 var vm = require('node:vm');
 
 var bridgeCallback;
+var screenModeParams;
 var context = {
   QSMH5APP: {
     getGameInfo: function (params, callback) {
       bridgeCallback = callback;
+    },
+    changeScreenmode: function (params, callback) {
+      screenModeParams = params;
+      callback({ code: 0, data: true });
     }
   },
   Promise: Promise,
@@ -66,6 +71,9 @@ async function run() {
     Gameversion: '1.0.1',
     Screenmode: 'horizontal'
   });
+
+  assert.equal(await context.GameBridge.changeScreenmode('vertical'), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(screenModeParams)), { mode: 'vertical' });
 
   var thirdPartyConfig = { url: 'https://tracking.example/collect', headers: {} };
   assert.equal(await axios.interceptors.request.fulfilled(thirdPartyConfig), thirdPartyConfig);

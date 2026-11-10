@@ -183,6 +183,7 @@ QSMH5APP.logout({}, function (result) {
   - `accountToken`：登录成功后安全存储的登录凭证；未登录时为空字符串。
   - `deviceType`：客户端类型，Android 返回 `android`，iOS 返回 `ios`。
   - `deviceCode`：设备码；未同意隐私协议时为空字符串。
+  - `notchScreen`：原生系统报告有刘海或挖孔时为整数 `1`，否则为 `0`；H5 据此调整页面内容布局，Android 游戏 WebView 本身覆盖完整屏幕。
   - `screenMode`：当前应用方向，横屏为 `horizontal`，竖屏为 `vertical`。
 
 ```js
@@ -198,7 +199,7 @@ QSMH5APP.getGameInfo({}, function (result) {
 - 说明：将当前应用强制切换为横屏或竖屏。当前方向已经等于目标方向时不重复执行切换，仍返回成功。
 - 参数：`mode` 必填；横屏传 `horizontal`，竖屏传 `vertical`。
 - 成功返回：`{code:0,msg:"ok",data:true}`。
-- 参数缺失、类型错误或值不在上述两项中：`{code:1001,msg:"参数无效",data:false}`。
+- 参数缺失、类型错误或值不在上述两项中时均返回 `code:1001,msg:"参数无效"`；Android 的 `data` 为 `null`，iOS 的 `data` 为 `false`。
 
 ```js
 QSMH5APP.changeScreenmode({ mode: "horizontal" }, function (result) {
@@ -554,7 +555,7 @@ else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
 | `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 本次对齐成功 `data=true`；只支持游戏阶段的 `web_game` / `web_welfare` | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
 | `closePage` | 关闭当前实例，成功 `data=true` | 本次对齐成功 `data=true`；仅游戏/福利实例，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
 | `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | 使用与配置同 origin 的 HTTPS URL 可共用；成功仅表示接受导航 |
-| `changeScreenmode` | 当前尚未实现 | 已实现横竖屏强制切换和幂等成功返回 | 当前仅 iOS 使用；参数只接受 `horizontal` / `vertical` |
+| `changeScreenmode` | 已实现横竖屏强制切换和幂等成功返回 | 已实现横竖屏强制切换和幂等成功返回 | 参数只接受 `horizontal` / `vertical` |
 | `setFloatingBall` | 已实现，福利置顶临时隐藏 | 已实现，同显隐/激活及恢复规则 | 调用通用；传布尔 `show/active`，缺初始化配置时 `code=0,data=false` |
 | `saveGameRole` / `getGameRole` | 已实现 | 尚未实现，返回非零错误 | 当前按 `deviceType` 隐藏 iOS 相关入口或提供 H5 自身降级 |
 | `isAppInstalled` / `openApp` | 接受安卓包名，受系统可见性限制 | 尚未实现，返回非零错误 | 当前仅 Android 使用；不能把安卓包名直接用于 iOS |

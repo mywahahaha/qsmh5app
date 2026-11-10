@@ -129,6 +129,8 @@ H5 登录页可以调用 `requestPhoneLogin` 再次尝试；仍受 `open` 和启
 
 注意现有协议拼写为 **`Accountoken`**，不是 `AccountToken`。`Gameversion` 不能使用 SDK 版本、服务端目标更新版本或旧包缓存值。
 
+Android 与 iOS 当前均发送八项业务 Header，其中 `Notchscreen` 表示系统缺口状态，`Screenmode` 横屏为 `horizontal`、竖屏为 `vertical`；两者同样用于初始化、Token 自动登录、一键登录兑换和心跳。H5 可分别通过 Bridge `getGameInfo.data.notchScreen`、`getGameInfo.data.screenMode` 读取同一状态，平台差异与验收方式按各自开发指南执行。
+
 ### 4.2 兑换阿里云认证凭证
 
 - 方法：`POST`，地址取 `config.exchange_url`。
@@ -296,7 +298,7 @@ Android 真机测试已完成（2026-11-02 用户确认）。以下保留为后�
 - 展示前失败返回 `3001` 并保留当前 H5 登录；功能关闭返回 `3003`；展示后取消/失败恢复新 H5 登录，兑换成功才保存 Token 并进入游戏。
 - 正常尺寸和较矮弹窗均无控件重叠或协议裁切；覆盖长协议名和系统字体设置。
 - 关闭、其他登录方式、系统返回均结束认证，H5 登录仍可继续；再次主动唤起不会叠加旧弹窗。
-- 取得认证凭证后只发送一次兑换，地址读取配置，请求体、六项基础 Header 及 iOS 两项扩展 Header 正确。
+- 取得认证凭证后只发送一次兑换，地址读取配置，请求体和平台约定的八项 Header 正确（含 `Notchscreen`、`Screenmode`）。
 - `code=0` 且有效 Token 才进入游戏；非 `0`、空 Token、网络异常均正确回退。
 - 保存后原生 Header、Bridge 和重启读取到的都是最新业务 Token；日志不输出密钥或 Token。
 - 覆盖目标系统版本与真实设备的运营商环境；记录 SDK 版本、系统版本、运营商及网络条件。

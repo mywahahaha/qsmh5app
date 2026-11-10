@@ -9,6 +9,8 @@ object GameHeaders {
         "Packagecode" to info.packageCode,
         "Devicetype" to info.deviceType,
         "Accountoken" to if (privacyAgreed) info.accountToken else "",
-        "Gameversion" to info.gameVersion
+        "Gameversion" to info.gameVersion,
+        "Notchscreen" to if (info.notchScreen == 1) "1" else "0",
+        "Screenmode" to info.screenMode
     )
 }

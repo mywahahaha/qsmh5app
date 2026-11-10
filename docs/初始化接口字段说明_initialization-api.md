@@ -7,7 +7,7 @@
 - 方法：`POST`。
 - 固定地址：`https://box.74meng.com/h5_app/init`，不可被初始化响应覆盖。
 - 当前客户端请求体：`{}`。
-- 固定 Header：`Gameid`、`Devicecode`、`Packagecode`、`Devicetype`、`Accountoken`、`Gameversion`。无值时仍发送空字符串；未同意隐私协议前 `Devicecode`、`Accountoken` 为空。
+- 固定 Header：`Gameid`、`Devicecode`、`Packagecode`、`Devicetype`、`Accountoken`、`Gameversion`、`Notchscreen`、`Screenmode`。`Notchscreen` 为 Android 系统报告有刘海或挖孔时的 `1`，否则为 `0`；游戏 WebView 延伸到缺口区域，H5 可通过 `getGameInfo.data.notchScreen` 取得同一状态自行适配。`Screenmode` 按当前应用方向发送，横屏为 `horizontal`、竖屏为 `vertical`，与 `getGameInfo.data.screenMode` 一致。其他 Header 无值时仍发送空字符串；未同意隐私协议前 `Devicecode`、`Accountoken` 为空。
 - `Gameversion` 来自构建时填写的游戏版本，渠道分包只写入 `Packagecode`，不会更改游戏版本。
 
 | 字段 | 类型 | 说明 |

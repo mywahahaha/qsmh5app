@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
@@ -40,6 +41,9 @@ import com.qishimeng.game.channel.ChannelCodeReader
 import com.qishimeng.game.config.InitConfig
 import com.qishimeng.game.config.InitConfigParser
 import com.qishimeng.game.config.ParseResult
+import com.qishimeng.game.device.NotchScreenDetector
+import com.qishimeng.game.device.ScreenMode
+import com.qishimeng.game.device.ScreenModeController
 import com.qishimeng.game.floatball.FloatingBallController
 import com.qishimeng.game.floatball.FloatingBallView
 import com.qishimeng.game.network.ApiClient
@@ -100,10 +104,23 @@ class MainActivity : AppCompatActivity() {
     private var externalBrowserOrientation: Int? = null
     private var pausedForExternalBrowser = false
     private var externalBrowserLaunched = false
+    private val screenModeController = ScreenModeController(
+        currentOrientation = { resources.configuration.orientation },
+        requestOrientation = { requestedOrientation = it }
+    )
+    @Volatile private var notchScreen = 0
+    private var waitingForFirstCutoutInsets = false
+    private val cutoutInsetsFallback = Runnable {
+        if (waitingForFirstCutoutInsets && ::networkGate.isInitialized && !isFinishing && !isDestroyed) {
+            waitingForFirstCutoutInsets = false
+            networkGate.runWhenConnected()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enterImmersiveFullscreen()
+        notchScreen = NotchScreenDetector.fromDisplay(this)
         host = FrameLayout(this)
         val root = FrameLayout(this)
         val fullscreen = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
@@ -114,6 +131,18 @@ class MainActivity : AppCompatActivity() {
         startupSplash = StartupSplashView(this)
         root.addView(startupSplash, FrameLayout.LayoutParams(fullscreen))
         setContentView(root)
+        if (Build.VERSION.SDK_INT >= 28) {
+            root.setOnApplyWindowInsetsListener { _, insets ->
+                notchScreen = maxOf(notchScreen, NotchScreenDetector.fromInsets(insets))
+                if (waitingForFirstCutoutInsets && ::networkGate.isInitialized) {
+                    waitingForFirstCutoutInsets = false
+                    mainHandler.removeCallbacks(cutoutInsetsFallback)
+                    networkGate.runWhenConnected()
+                }
+                insets
+            }
+            root.post { root.requestApplyInsets() }
+        }
         startupBackground = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             visibility = View.GONE
@@ -140,7 +169,11 @@ class MainActivity : AppCompatActivity() {
                 showMessage("请连接网络，并允许本游戏联网后重试。")
             }
         )
-        networkGate.runWhenConnected()
+        if (Build.VERSION.SDK_INT >= 28) {
+            // 先取得窗口缺口信息，再发初始化请求；异常设备在超时后继续启动。
+            waitingForFirstCutoutInsets = true
+            mainHandler.postDelayed(cutoutInsetsFallback, 2_000L)
+        } else networkGate.runWhenConnected()
     }
 
     override fun onResume() {
@@ -162,6 +195,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(cutoutInsetsFallback)
         heartbeatSession?.close()
         heartbeatSession = null
         if (::networkGate.isInitialized) networkGate.close()
@@ -431,7 +465,8 @@ class MainActivity : AppCompatActivity() {
                 }
             },
             onPrivacyRejected = { mainHandler.post { finishAffinity() } },
-            onPhoneLoginFallback = { mainHandler.post(::openH5LoginPage) }
+            onPhoneLoginFallback = { mainHandler.post(::openH5LoginPage) },
+            changeScreenMode = screenModeController::change
         )
         val bridge = BridgeJavascriptInterface(webView, actions) {
             webContainer?.get(instance)?.webView === webView
@@ -453,7 +488,7 @@ class MainActivity : AppCompatActivity() {
         tokenStore = tokenStore,
         authGateway = onekeyAuthGateway,
         apiClient = apiClient,
-        gameInfo = gameInfo()
+        gameInfo = ::gameInfo
     )
 
     private fun createOnekeyConfig(config: InitConfig): OnekeyConfig = OnekeyConfig(
@@ -479,12 +514,19 @@ class MainActivity : AppCompatActivity() {
             gameVersion = BuildConfig.GAME_VERSION,
             accountToken = tokenStore.token.orEmpty(),
             deviceType = "android",
-            deviceCode = deviceCodeProvider.get(agreed)
+            deviceCode = deviceCodeProvider.get(agreed),
+            notchScreen = notchScreen,
+            screenMode = ScreenMode.fromConfiguration(resources.configuration.orientation).value
         )
     }
 
     private fun enterImmersiveFullscreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = NotchScreenDetector.layoutMode(Build.VERSION.SDK_INT)
+            }
+        }
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
         @Suppress("DEPRECATION")

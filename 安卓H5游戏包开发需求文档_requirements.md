@@ -294,10 +294,11 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 
 - 登录成功后打开游戏 WebView（本质为封装 H5 页面的壳），并销毁 H5 登录实例 `web_login`。Token 自动登录、阿里云登录和 `notifyLoginSuccess` 成功均使用同一切换流程。
 - 游戏存在时打开福利大厅 `web_welfare`，将大厅置顶，保留游戏 WebView 及其当前文档状态。同名大厅已存在时复用置顶，不重复创建，也不关闭游戏。
-- APP 使用沉浸式全屏：隐藏状态栏、导航栏以及电池和信号等系统工具栏；H5 页面实例、悬浮球和一键登录弹窗的尺寸与定位均基于隐藏系统栏后的完整设备视口计算。
+- APP 使用沉浸式全屏：隐藏状态栏、导航栏以及电池和信号等系统工具栏；Android 游戏 WebView 与宿主窗口延伸到刘海、挖孔区域，不在原生层为游戏页面预留缺口边距。H5 页面实例、悬浮球和一键登录弹窗的尺寸与定位均基于隐藏系统栏后的完整设备视口计算；H5 根据 `Notchscreen` 或 `getGameInfo.data.notchScreen` 自行避让重要内容。
 - 建议最低支持 Android API 23（Android 6.0）；Web 内容使用设备当前稳定版 Android System WebView，不在应用中固定 Chromium 内核版本。验收覆盖 Android 8、10、13、15，并记录设备系统与 WebView 版本。
 - H5 游戏页面可通过 JS 从游戏端获取 `accountToken`，并在服务器端处理。
-- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
+- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`、`notchScreen`、`screenMode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；`notchScreen` 为系统报告有刘海或挖孔时的整数 `1`，否则为 `0`；`screenMode` 按当前应用方向返回，横屏为 `horizontal`、竖屏为 `vertical`；用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
+- `changeScreenmode({mode})` 将当前应用强制切换为横屏或竖屏，`mode` 仅允许 `horizontal`、`vertical`。目标方向与当前方向一致时不重复请求系统切换，但仍返回 `code:0,data:true`；值缺失、类型错误或不在允许范围内时返回 `code:1001,msg:"参数无效",data:null`。
 - `changeGameUrl({url})` 用于切换 `web_game`：URL 必须是有效绝对 HTTP/HTTPS 地址，主机名与初始化 `h5Pages.game.url` 的主机名精确匹配，不自动允许子域，且不使用仅服务于外部浏览器跳转的 `jumpDomain`。已有 `web_game` 时在原实例中导航到新 URL 并置顶；不存在时创建、加载该 URL 并置顶。地址校验通过且原生接受导航操作时返回 `data:true`，参数/地址校验或原生导航操作失败时返回 `data:false`；`true` 不代表远端页面加载成功。
 - 福利大厅调用 `changeGameUrl` 时，直接在现有游戏 WebView 中加载新地址，不关闭、销毁或重建游戏实例；新文档会替换旧文档，旧页面 JS 状态不保留。大厅保留在游戏后方，游戏置顶后恢复运行时悬浮球状态，下次打开大厅继续复用大厅实例。
 - 初始化、游戏及相关 SDK 服务端请求由原生网络层统一附加以下 HTTP Header；无可用值时仍发送该 Header，值为空字符串（尤其未同意隐私协议时 `Devicecode` 为空）：
@@ -310,10 +311,12 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 | `Devicetype` | `deviceType`，本期固定 `android` |
 | `Accountoken` | 安全存储的 `accountToken`；未登录时为空 |
 | `Gameversion` | 本地常量 `gameVersion` |
+| `Notchscreen` | Android 系统报告有刘海或挖孔时为 `1`，否则为 `0`；不依赖隐私同意或登录状态 |
+| `Screenmode` | 当前应用方向；横屏为 `horizontal`，竖屏为 `vertical` |
 
-上述六个 HTTP Header 仅要求用于初始化 `POST /h5_app/init`、运营心跳 `/h5_app/popup_interval`、阿里云一键登录兑换接口、本地 Token 自动登录 `POST /h5_app/login_by_token`。隐私同意前，初始化请求的 `Devicecode` 与 `Accountoken` 均发送空字符串；同意后本地 Token 自动登录时 `Accountoken` 携带本地 Token。其他业务请求 Header 另按接口契约约定。
+上述八个 HTTP Header 仅要求用于初始化 `POST /h5_app/init`、运营心跳 `/h5_app/popup_interval`、阿里云一键登录兑换接口、本地 Token 自动登录 `POST /h5_app/login_by_token`。隐私同意前，初始化请求的 `Devicecode` 与 `Accountoken` 均发送空字符串；同意后本地 Token 自动登录时 `Accountoken` 携带本地 Token。其他业务请求 Header 另按接口契约约定。`Notchscreen` 仅表示是否存在缺口，不提供缺口尺寸或位置；Android 8 及以下没有统一系统缺口接口，当前实现按 `0` 发送。
 
-HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_SERVER` 通常映射为 `HTTP_GAMEID`、`HTTP_DEVICECODE`、`HTTP_PACKAGECODE`、`HTTP_DEVICETYPE`、`HTTP_ACCOUNTOKEN`、`HTTP_GAMEVERSION`。例如 `$deviceCode = $_SERVER['HTTP_DEVICECODE'] ?? '';`。`$server['Devicecode']` 仅在项目自身将 Header 归一化到 `$server` 数组时才适用；建议使用 `getallheaders()` 或框架 Header API 按不区分大小写方式读取。
+HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_SERVER` 通常映射为 `HTTP_GAMEID`、`HTTP_DEVICECODE`、`HTTP_PACKAGECODE`、`HTTP_DEVICETYPE`、`HTTP_ACCOUNTOKEN`、`HTTP_GAMEVERSION`、`HTTP_NOTCHSCREEN`、`HTTP_SCREENMODE`。例如 `$deviceCode = $_SERVER['HTTP_DEVICECODE'] ?? '';`。`$server['Devicecode']` 仅在项目自身将 Header 归一化到 `$server` 数组时才适用；建议使用 `getallheaders()` 或框架 Header API 按不区分大小写方式读取。
 - 验证 Token 失败时：关闭游戏 H5 页面，重新走一遍登录流程。
 - H5 退出接口：清除本地持久化 `accountToken`，销毁游戏、福利大厅和运营弹窗等当前会话页面，隐藏悬浮球，然后从一键登录步骤重新开始。初始化 `aliyunOnekeyConfig.open=1` 时尝试阿里云授权及业务兑换；未开启、配置不足、用户取消或认证/兑换失败时，创建新的 H5 登录实例 `web_login`。不复用旧登录文档，不再尝试旧 Token 自动登录，也不重跑初始化和更新检查。任一方式重新登录成功后保存新 Token 并创建新的游戏实例。退出登录不会清除 `saveLocalStorage` 保存的数据和启动隐私同意状态；`logout` 成功回调只表示退出流程已受理，不表示重新认证成功。
 - 实例从容器关闭时，其 Bridge 立即失效；即使仍在执行淡出动画，旧页面后续请求也不能操作窗口或新会话。同名实例重建后仍须校验 WebView 对象身份。
@@ -339,7 +342,7 @@ HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_
 ### 4.8 运营弹窗心跳
 
 - 登录成功、`web_game` 加载可见且悬浮球实际显示后，按初始化响应 `popupInterval` 中的 `url` 和 `interval` 启动周期请求。示例 URL 为 `https://box.74meng.com/h5_app/popup_interval`，`interval` 示例值为 `30`。首次请求等待完整 `interval` 秒，不立即请求，也不固定延迟 1 秒；缺失 URL、非法 URL 或非正间隔不启动轮询。
-- 心跳请求携带第 4.5 节定义的六个固定 Header；未登录或未同意隐私时对应值为空字符串。
+- 心跳请求携带第 4.5 节定义的八个固定 Header；未登录或未同意隐私时对应值为空字符串。
 - 请求使用 POST、JSON 请求体 `{}`；响应外层 `code != 0` 完全忽略，不改变悬浮球或窗口。`code = 0` 时读取以下数据：
 
 ```json
@@ -464,7 +467,7 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 
 - 隐私协议：`agreePrivacyPolicy`、`rejectPrivacyPolicy`。
 - 登录与会话：`requestPhoneLogin`、`notifyLoginSuccess`、`getAccountToken`、`logout`。
-- 游戏信息：`getGameInfo`。
+- 游戏信息与屏幕方向：`getGameInfo`、`changeScreenmode`。
 - 游戏角色：`saveGameRole`、`getGameRole`。
 - 本地存储：`saveLocalStorage`、`getLocalStorage`。
 - 第三方应用：`isAppInstalled`、`openApp`，均接收 `{packageName}`，通过统一异步回调的 `data` 返回布尔值。检测可见且已安装的包为 `true`，未安装或系统不可见为 `false`；打开采用系统提供的包启动入口，系统接受启动请求为 `true`，未安装、无入口或系统拒绝为 `false`。参数无效返回 `code:1001,data:false`，其他异常返回 `code:9999,data:false`。
@@ -502,6 +505,8 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 | `deviceCode` | 隐私同意后生成或取得；HTTP Header 为 `Devicecode` |
 | `deviceType` | 客户端类型，本期固定 `android`；HTTP Header 为 `Devicetype` |
 | `accountToken` | 安全存储的登录凭证；HTTP Header 为 `Accountoken` |
+| `notchScreen` | 系统缺口检测结果，整数 `0` 或 `1`；HTTP Header 为 `Notchscreen` |
+| `screenMode` | 当前应用方向，横屏为 `horizontal`、竖屏为 `vertical`；HTTP Header 为 `Screenmode` |
 | 初始化接口地址 | SDK 内硬编码为 `https://box.74meng.com/h5_app/init`，不是初始化响应字段 |
 
 ## 12. 待确认问题
@@ -514,7 +519,7 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 | P0 | JSBridge 调用约定 | Android WebView 的桥接注入方式、参数序列化、异步回调形式、回调超时/重复调用处理、页面销毁后的回调行为及错误码；最低 API 与 WebView 版本建议见第 4.5 节 |
 | P0 | 登录与 Token 生命周期 | 一键登录取消/失败、H5 登录回传、Token 本地保存与有效期、本地 Token 登录任意非 0 业务码清理及重启跳过、失效或刷新通知、并发窗口登出，以及 Token 不进入日志等处理 |
 | P0 | 页面与窗口规则 | 页面实例名与 URL 映射、打开/关闭和置顶行为、尺寸定位、重复打开策略、`closeMiniWindow` 与 `closePage` 的适用范围及关闭结果定义 |
-| P0 | 服务端接口契约 | 初始化、心跳、阿里云兑换、本地 Token 登录接口的请求字段、六个固定 Header 的接入验证、本地 Token 登录任意非 0 业务码清理、超时和重试规则；服务端部署已确认，兑换地址使用初始化配置 `exchange_url` |
+| P0 | 服务端接口契约 | 初始化、心跳、阿里云兑换、本地 Token 登录接口的请求字段、八个固定 Header 的接入验证、本地 Token 登录任意非 0 业务码清理、超时和重试规则；服务端部署已确认，兑换地址使用初始化配置 `exchange_url` |
 | P1 | 域名与桥接安全实现 | 外链重定向后是否再次校验、非 HTTP(S) scheme 处理、Bridge 来源的独立信任策略及未通过时行为；`jumpDomain` 的用途和协议规则已定稿 |
 | P1 | 更新实现补充 | 版本比较、下载中断与重试策略、存储空间不足和系统安装失败提示；更新异常放行规则已定稿 |
 | P1 | 悬浮球状态优先级 | 初始化、心跳和 H5 同时更新时的优先级；建议按最后一次有效状态生效，福利大厅关闭后恢复最新运行状态 |

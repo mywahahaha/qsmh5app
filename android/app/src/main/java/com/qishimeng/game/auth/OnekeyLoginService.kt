@@ -42,7 +42,7 @@ class OnekeyLoginService(
     private val tokenStore: AccountTokenStore,
     private val authGateway: OnekeyAuthGateway,
     private val apiClient: ApiClient,
-    private val gameInfo: GameInfo,
+    private val gameInfo: () -> GameInfo,
     private val executor: Executor = Executors.newSingleThreadExecutor()
 ) {
     fun login(config: OnekeyConfig, privacyAgreed: Boolean, onPresented: () -> Unit = {}, completion: (OneKeyLoginOutcome) -> Unit) {
@@ -74,7 +74,7 @@ class OnekeyLoginService(
     private fun exchange(authToken: String, url: String): OneKeyLoginOutcome {
         return try {
             val body = Gson().toJson(mapOf("auth_token" to authToken))
-            val response = apiClient.post(url, body, gameInfo.copy(accountToken = tokenStore.token.orEmpty()), true)
+            val response = apiClient.post(url, body, gameInfo().copy(accountToken = tokenStore.token.orEmpty()), true)
             val accountToken = response.data?.asJsonObject?.get("token")
                 ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
                 ?.asString

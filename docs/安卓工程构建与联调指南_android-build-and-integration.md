@@ -128,7 +128,7 @@ H5 初始化时先检查 `window.QSMH5APP`，未就绪则监听 `window` 的 `QS
 
 ### 运营心跳与弹窗管理（2026-10-29）
 
-- 登录完成、游戏页 `web_game` 可见且悬浮球显示后，等待 `popupInterval.interval` 秒首次 POST `popupInterval.url`，请求体 `{}`，携带现有六项请求头和当次 Token。每次请求完成后等待配置间隔再发下一次，不并发叠加。
+- 登录完成、游戏页 `web_game` 可见且悬浮球显示后，等待 `popupInterval.interval` 秒首次 POST `popupInterval.url`，请求体 `{}`，携带现有八项请求头和当次 Token（含 `Notchscreen`、`Screenmode`）。每次请求完成后等待配置间隔再发下一次，不并发叠加。
 - `code != 0` 忽略，`code = 0` 同步 `data.floating_ball.show/active` 与 `data.popup_pages`。同状态不重新加载球图标；隐藏球不停止已有轮询，后续响应可恢复。
 - 只清理已标记的运营弹窗。所有初始化 `h5Pages` 实例及其他功能窗口受保护；已存在 instance 不重载、不换地址、不前置。新运营窗口按清单顺序创建并前置。
 - 新运营页 Bridge 使用原生来源和主 frame 校验，拒绝子 frame、其他主机和已销毁实例的请求。不支持 `WEB_MESSAGE_LISTENER` 的旧 WebView 只展示页面、不授予不安全的原生入口，并输出 `QSMHeartbeat` 警告；应更新 Android System WebView。功能页现有 Bridge 兼容路径不在本轮全面重构范围。
@@ -288,10 +288,10 @@ py -3 tools/channel_apk.py .\base.apk .\channel.apk "1-25-6#10028"
 
 当前进度：Android 真机测试已完成（2026-11-02 用户确认）。以下保留为后续版本复验清单，具体设备、场景及结果按实际测试记录填写。
 
-- 初始化：确认 `POST https://box.74meng.com/h5_app/init` 的请求体、六项 Header 和真实响应字段/错误处理。
+- 初始化：确认 `POST https://box.74meng.com/h5_app/init` 的请求体、八项 Header（含 `Notchscreen`、`Screenmode`）和真实响应字段/错误处理；在刘海或挖孔真机核对游戏 WebView 覆盖完整屏幕、`Notchscreen: 1` 与 `getGameInfo.data.notchScreen === 1`，并由 H5 避让顶部重要内容；分别在横竖屏核对 `Screenmode` 与 `getGameInfo.data.screenMode` 一致。
 - 登录：核对 Token 登录成功覆盖、任意非 0 清理和重启跳过；核对阿里云 `exchange_url` 的请求体字段、回包 token 和本机安全存储。
 - 隐私：首次同意、拒绝、撤回后重启；未同意前确认 `Devicecode`、`Accountoken` 均为空。
-- WebView/Bridge：在实际 WebView 验证 `QSMH5APP` 调用形式、回调时机、页面销毁竞态、隐私同意/拒绝、登录通知、角色读写和 URL 切换。
+- WebView/Bridge：在实际 WebView 验证 `QSMH5APP` 调用形式、回调时机、页面销毁竞态、隐私同意/拒绝、登录通知、角色读写、URL 切换，以及 `changeScreenmode` 横竖屏切换、同方向幂等成功和非法参数错误响应。
 - 心跳/窗口：验证服务端返回结构、间隔单位、多弹窗和实例清理、`web_game`/`web_welfare` 与悬浮球状态协调。
 - 更新：覆盖 `open=0`、正常强制/非强制更新、百分比尺寸、自适应高度、外部浏览器/内部下载两种模式、未知来源安装授权、成功唤起安装器后退出、安装完成/取消后从桌面重新启动，以及字段错误、网络失败和下载失败；异常必须放行登录，拒绝安装授权时保留手动安装入口。
 - 出包：至少用两份游戏配置分别构建，检查包名、桌面名、游戏常量、图标、闪图选择、签名证书和 APK 安装。

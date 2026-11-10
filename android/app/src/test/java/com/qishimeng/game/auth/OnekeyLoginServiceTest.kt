@@ -9,6 +9,28 @@ import java.util.concurrent.Executor
 
 class OnekeyLoginServiceTest {
     @Test
+    fun exchangeUsesScreenModeAtRequestTime() {
+        val store = InMemoryAccountTokenStore(null)
+        var currentScreenMode = "vertical"
+        val service = OnekeyLoginService(
+            store,
+            OnekeyAuthGateway { _, completion -> completion(OnekeyAuthResult.Success("auth-secret")) },
+            ApiClient(HttpTransport { request ->
+                assertEquals("horizontal", request.headers.getValue("Screenmode"))
+                ApiResponse(200, """{"code":0,"data":{"token":"account-token"}}""")
+            }),
+            { GameInfo("", 266, "1.0", "", "android", "", screenMode = currentScreenMode) },
+            Executor(Runnable::run)
+        )
+        currentScreenMode = "horizontal"
+
+        var outcome: OneKeyLoginOutcome? = null
+        service.login(OnekeyConfig(true, "secret", "https://box.74meng.com/exchange"), true) { outcome = it }
+
+        assertEquals(OneKeyLoginOutcome.Success("account-token"), outcome)
+    }
+
+    @Test
     fun sdkSecretCanAuthenticateExchangeAndStoreAccountToken() {
         val store = InMemoryAccountTokenStore(null)
         var capturedUrl = ""
@@ -22,7 +44,7 @@ class OnekeyLoginServiceTest {
                 assertEquals("", request.headers.getValue("Accountoken"))
                 ApiResponse(200, """{"code":0,"msg":"登录成功","data":{"token":"account-token"}}""")
             }),
-            GameInfo("", 266, "1.0", "", "android", ""),
+            { GameInfo("", 266, "1.0", "", "android", "") },
             Executor(Runnable::run)
         )
 
@@ -38,7 +60,7 @@ class OnekeyLoginServiceTest {
     @Test
     fun disabledCancelledAndFailedExchangeFallBackWithoutBlocking() {
         val store = InMemoryAccountTokenStore("keep")
-        val service = OnekeyLoginService(store, OnekeyAuthGateway { _, completion -> completion(OnekeyAuthResult.Cancelled) }, ApiClient(HttpTransport { error("must not run") }), GameInfo("", 1, "1", "", "android", ""), Executor(Runnable::run))
+        val service = OnekeyLoginService(store, OnekeyAuthGateway { _, completion -> completion(OnekeyAuthResult.Cancelled) }, ApiClient(HttpTransport { error("must not run") }), { GameInfo("", 1, "1", "", "android", "") }, Executor(Runnable::run))
         assertEquals(OneKeyLoginOutcome.Disabled, service.loginResult(OnekeyConfig(false, "", ""), true))
         assertEquals(OneKeyLoginOutcome.Fallback, service.loginResult(OnekeyConfig(true, "secret", "https://box.74meng.com/exchange"), false))
         assertEquals(OneKeyLoginOutcome.Fallback, service.loginResult(OnekeyConfig(true, "secret", "https://box.74meng.com/exchange"), true))

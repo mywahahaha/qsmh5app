@@ -14,6 +14,8 @@ import com.qishimeng.game.config.LayoutValue
 import com.qishimeng.game.config.PageSpec
 import com.qishimeng.game.config.InitConfigParser
 import com.qishimeng.game.config.ParseResult
+import com.qishimeng.game.device.ScreenMode
+import com.qishimeng.game.device.ScreenModeController
 import com.qishimeng.game.network.ApiClient
 import com.qishimeng.game.network.ApiResponse
 import com.qishimeng.game.network.HttpTransport
@@ -118,16 +120,26 @@ class BridgeInjectionTest {
             deviceCodeProvider = DeviceCodeProvider(AndroidDeviceIdentifiers(activity), EncryptedDeviceCodeStore(activity))
             container = WebContainer(activity, activity.host, pages, emptySet(), bridgeInstaller = { view, name ->
                 views.add(view)
-                val info = { GameInfo("test-channel", 92, "test", tokens.token.orEmpty(), "android", deviceCodeProvider.get(privacy.isAgreed())) }
+                val info = {
+                    GameInfo(
+                        "test-channel", 92, "test", tokens.token.orEmpty(), "android",
+                        deviceCodeProvider.get(privacy.isAgreed()),
+                        screenMode = ScreenMode.fromConfiguration(activity.resources.configuration.orientation).value
+                    )
+                }
                 val actions = BridgeActions(
                     privacy, tokens, info, roleStore, BridgeLocalStorage(SharedPreferencesLocalStorage(activity)),
                     ExternalApps(object : ContextWrapper(activity) {
                         // 保留真实包查询，仅记录系统启动边界，避免测试唤起业务首页及其网络流程。
                         override fun startActivity(intent: Intent) { launchedApp = intent }
                     }), container,
-                    OnekeyLoginService(tokens, phoneGateway, phoneApi, info(), java.util.concurrent.Executor(Runnable::run)),
+                    OnekeyLoginService(tokens, phoneGateway, phoneApi, info, java.util.concurrent.Executor(Runnable::run)),
                     { phoneConfig }, { _, _ -> false }, name,
-                    { loginToken = it }, {}, {}, {}, { activity.runOnUiThread { container.openConfigured("login") } }
+                    { loginToken = it }, {}, {}, {}, { activity.runOnUiThread { container.openConfigured("login") } },
+                    ScreenModeController(
+                        currentOrientation = { activity.resources.configuration.orientation },
+                        requestOrientation = { activity.requestedOrientation = it }
+                    )::change
                 )
                 if (name == "web_login") phoneActions = actions
                 view.addJavascriptInterface(BridgeJavascriptInterface(view, actions), BridgeJavascriptInterface.INTERFACE_NAME)
@@ -289,6 +301,21 @@ class BridgeInjectionTest {
         }
     }
 
+    @Test fun screenModeBridgeReturnsTrueForSameModeAndRejectsInvalidMode() {
+        val view = open("game")
+        assertEarlyBridge(view)
+        evaluate(view, "QSMH5APP.getGameInfo(function(info){QSMH5APP.changeScreenmode({mode:info.data.screenMode},function(r){window.sameScreenMode=r;});});")
+        await(view, "window.sameScreenMode != null")
+        assertEquals("0", evaluate(view, "window.sameScreenMode.code"))
+        assertEquals("true", evaluate(view, "window.sameScreenMode.data"))
+
+        evaluate(view, "QSMH5APP.changeScreenmode({mode:'diagonal'},function(r){window.invalidScreenMode=r;});")
+        await(view, "window.invalidScreenMode != null")
+        assertEquals("1001", evaluate(view, "window.invalidScreenMode.code"))
+        assertEquals("\"参数无效\"", evaluate(view, "window.invalidScreenMode.msg"))
+        assertEquals("null", evaluate(view, "window.invalidScreenMode.data"))
+    }
+
     @Test fun appMethodsRejectNonObjectArgumentsWithoutLosingCallback() {
         val view = open("game")
         assertEarlyBridge(view)
@@ -426,13 +453,13 @@ class BridgeInjectionTest {
         assertEquals("\"\"", evaluate(view, "window.afterTokenRejection.data.accountToken"))
         assertEquals("\"\"", evaluate(view, "window.afterTokenValue.data.accountToken"))
 
-        // 已创建的一键登录 service 持有旧 GameInfo 快照，兑换时也必须使用存储中的最新 Token。
+        // 兑换时必须使用存储中的最新 Token。
         val exchangeApi = ApiClient(HttpTransport { request ->
             assertEquals("", request.headers["Accountoken"])
             ApiResponse(200, """{"code":9,"msg":"rejected"}""")
         })
         val onekey = OnekeyLoginService(tokens, OnekeyAuthGateway { _, done -> done(OnekeyAuthResult.Success("test-auth-token")) },
-            exchangeApi, snapshot, java.util.concurrent.Executor(Runnable::run))
+            exchangeApi, { snapshot }, java.util.concurrent.Executor(Runnable::run))
         var onekeyOutcome: OneKeyLoginOutcome? = null
         onekey.login(OnekeyConfig(true, "test-secret", url("exchange")), true) { onekeyOutcome = it }
         assertEquals(OneKeyLoginOutcome.Fallback, onekeyOutcome)

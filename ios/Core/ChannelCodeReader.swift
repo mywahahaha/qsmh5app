@@ -1,23 +1,29 @@
 import Foundation
 
 enum ChannelCodeReader {
-    // 安装后 IPA 已被系统解包；主 Bundle 的父目录对应 Payload 所在层级。
-    // 只枚举直接下级目录，不依赖应用文件名，也不递归进入插件或资源 Bundle。
-    static func read(bundle: Bundle = .main) -> String {
-        read(payloadDirectory: bundle.bundleURL.deletingLastPathComponent())
+    // 真机允许访问自身 Bundle，但不保证可以枚举安装容器父目录。
+    // Bundle 已确定当前 .app 的位置，直接读取其中的渠道目录即可，不访问同级应用。
+    static func read(bundle: Bundle = .main, fileManager: FileManager = .default) -> String {
+        read(applicationDirectory: bundle.bundleURL, fileManager: fileManager)
     }
 
     static func read(payloadDirectory: URL, fileManager: FileManager = .default) -> String {
         for app in directories(in: payloadDirectory, using: fileManager) where app.lastPathComponent.hasSuffix(".app") {
-            let packCode = app.appendingPathComponent("packCode", isDirectory: true)
-            guard isDirectory(packCode) else { continue }
-            for channel in directories(in: packCode, using: fileManager) {
-                let name = channel.lastPathComponent
-                // 不限制渠道格式；仅过滤不能安全放入 HTTP Header 的控制字符与空白名称。
-                guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                      !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { continue }
-                return name
-            }
+            let code = read(applicationDirectory: app, fileManager: fileManager)
+            if !code.isEmpty { return code }
+        }
+        return ""
+    }
+
+    private static func read(applicationDirectory: URL, fileManager: FileManager) -> String {
+        guard isDirectory(applicationDirectory) else { return "" }
+        let packCode = applicationDirectory.appendingPathComponent("packCode", isDirectory: true)
+        for channel in directories(in: packCode, using: fileManager) {
+            let name = channel.lastPathComponent
+            // 不限制渠道格式；仅过滤不能安全放入 HTTP Header 的控制字符与空白名称。
+            guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { continue }
+            return name
         }
         return ""
     }

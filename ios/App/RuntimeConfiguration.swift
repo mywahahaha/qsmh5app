@@ -13,10 +13,11 @@ struct RuntimeConfiguration {
         #if LOCAL_TESTING
         let base = URL(string: "http://localhost:18740")!
         let scenarios: Set<String> = ["normal", "no-privacy", "init-error", "invalid-code", "token-rejected", "onekey", "delayed-login",
-                                      "floatball", "floatball-hidden", "floatball-heartbeat"]
+                                      "floatball", "floatball-edge", "floatball-hidden", "floatball-heartbeat", "background", "background-fail", "slow-page", "network-wait", "fullscreen", "update-offer", "update-force", "update-invalid"]
         let scenario = environment["QSM_LOCAL_SCENARIO"] ?? "normal"
         guard scenarios.contains(scenario) else { throw QSMError.invalid("未知本地测试场景") }
-        return RuntimeConfiguration(identity: GameIdentity(gameID: 29, version: "1.0.1", packageCode: packageCode),
+        return RuntimeConfiguration(identity: GameIdentity(gameID: Int(bundle.object(forInfoDictionaryKey: "QSMGameID") as? String ?? "") ?? 29,
+            version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.1", packageCode: packageCode),
             baseURL: base.appendingPathComponent("scenario/\(scenario)"), policy: URLPolicy(localOrigin: Origin(base)),
             resetLocalState: arguments.contains("-qsm-reset"), initialGameURL: nil)
         #else

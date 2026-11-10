@@ -14,7 +14,7 @@
             buildForArchiving = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "28E01024CA5190A812A34F34"
+               BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
                BuildableName = "QSMH5App.app"
                BlueprintName = "QSMH5App"
                ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -34,7 +34,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "17A8513C349110F6C1F7618B"
+               BlueprintIdentifier = "88442D2DBA277C57DAA4A72F"
                BuildableName = "QSMH5AppTests.xctest"
                BlueprintName = "QSMH5AppTests"
                ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -44,7 +44,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FF8F9540056B6C18EB26412A"
+               BlueprintIdentifier = "A7718EE8CD021ECAF13A4D84"
                BuildableName = "QSMH5AppUITests.xctest"
                BlueprintName = "QSMH5AppUITests"
                ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -54,7 +54,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -77,7 +77,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -93,7 +93,7 @@
       <BuildableProductRunnable>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">

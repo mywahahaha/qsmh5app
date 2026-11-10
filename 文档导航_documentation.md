@@ -6,6 +6,8 @@
 
 平台开发边界以根目录 [AGENTS.md](AGENTS.md) 为准：Windows 仅开发安卓端，macOS 仅开发 iOS 端，不跨平台修改另一端专属代码、资源和构建配置；共用文档可随任务同步。
 
+2026-11-03 iOS 更新：构建 5 真机安装和图标已由用户确认；同意隐私后的闪退日志定位到阿里云授权页方向检查。构建 6 已修复联网等待和授权方向并完成签名，61 项核心、14 项模拟器 UI、2 项真实 SDK 方向专项通过，待用户覆盖安装复验，详见[修复记录](docs/iOS首次联网与授权闪退修复_ios-startup-auth-fix.md)。
+
 ## 文档关系
 
 | 文档 | 用途 | 当前状态 |
@@ -24,8 +26,15 @@
 | [iOS开发就绪检查](docs/iOS开发就绪检查_ios-readiness-check.md) | 本机工具链、临时编译与模拟器运行实测、签名材料匹配及文档缺口 | 开发前历史检查；当前已有工程和真实 SDK，最新结果见首期开发记录 |
 | [iOS首期实施计划](docs/iOS首期实施计划_ios-bootstrap-plan.md) | 初始化、隐私、H5 登录、容器、Bridge 与替身测试的实施范围 | 首期实现、测试及 Ad Hoc 签名出包完成 |
 | [iOS首期开发与联调记录](docs/iOS首期开发与联调记录_ios-bootstrap-development.md) | 本次身份、模块、测试证据、SDK、归档与未完成项 | 2026-11-02 最新事实记录；Ad Hoc IPA 已验签，仅限描述文件登记的 6 台设备 |
-| [iOS开发指南](ios/开发指南_development.md) | 工程打开、本地运行、测试、SDK 安装、归档和签名命令 | 可执行指南；本轮用户不做真机测试 |
-| [iOS悬浮球需求与实现](docs/iOS悬浮球需求与实现_ios-floating-ball.md) | Android 规则逐项核对、iOS 状态/布局/拖动/心跳、H5 通用调用及验证 | 构建 3 已接入悬浮球与 `floating_ball`；运营清单 `popup_pages` 尚未实现 |
+| [iOS开发指南](ios/开发指南_development.md) | 工程打开、本地运行、测试、SDK 安装、归档和签名命令 | 可执行指南；真机由用户自行安装验收，最新修复包为构建 6 |
+| [iOS悬浮球需求与实现](docs/iOS悬浮球需求与实现_ios-floating-ball.md) | Android 规则逐项核对、iOS 状态/布局/拖动/心跳、H5 通用调用及验证 | 2026-11-04 修正 `right: 0` 屏幕贴边；游戏 92 构建 3 已签名，运营清单 `popup_pages` 尚未实现 |
+| [iOS游戏背景闪图与打包器需求分析](docs/iOS游戏背景闪图与打包器需求分析_ios-assets-packager-feasibility.md) | Android 图片与打包器行为、iOS 缺口、Mac 多游戏签名出包方案及验收 | 开发前方案；已按顺序实施，当前状态见下方实施记录，旧构建 3 仍为 6 台 |
+| [iOS图片与打包器实施记录](docs/iOS图片与打包器实施记录_ios-assets-packager-development.md) | 背景、闪图、首帧过渡、多游戏构建与 Mac GUI 实现及证据 | 构建 4：56 项核心、13 项 UI、15 项 JS、8 项后端测试通过；Ad Hoc 最终 IPA 验证通过，未做真机安装 |
+| [iOS首次联网与授权闪退修复](docs/iOS首次联网与授权闪退修复_ios-startup-auth-fix.md) | 构建 5 真机反馈、联网等待、SDK 方向修复、回归及崩溃日志提取 | 真机崩溃栈确认阿里云授权展示方向异常；构建 6 已验签，61 项核心及 14 项 UI 通过，待覆盖安装复验 |
+| [iOS授权品牌UI与全屏容器修复](docs/iOS授权品牌UI与全屏容器修复_ios-auth-ui-fullscreen.md) | 对照 Android 与设计文档实现 SDK 品牌授权弹窗、禁止 H5 容器拖动和真全屏 | 构建 7 已签名；69 项核心、15 项 UI、3 项真实 SDK 专项通过，真机视觉及取号待用户复验 |
+| [iOS渠道读取与授权标题修复](docs/iOS渠道读取与授权标题修复_ios-channel-auth-header-fix.md) | 安装后直接读取自身渠道目录；标题增高、Logo 放大和垂直居中 | 构建 8 母包及 1-218 渠道包已签名；70 项核心和 3 项 SDK 专项通过，真机待复验 |
+| [iOS14兼容实施记录](docs/iOS14兼容实施记录_ios14-compatibility.md) | iPhone 8 Plus iOS 14.4.2 安装兼容；修正系统 API 可用性并更新签名描述文件 | 构建 9 两包已签名；71 核心、15 UI、3 SDK 专项通过，真机安装及 SIM 取号待复验 |
+| [iOS游戏打包器使用指南](ios/Packager/使用指南_usage.md) | 图形工具、配置、资源规范、签名材料、CLI 与产物说明 | 本机 Xcode 16.4 / Python 3.12 验证，工具与游戏安装包的分发签名独立 |
 | [iOS原生界面预览](docs/iOS原生界面预览_ios-native-ui-preview.html) | 横竖屏授权、协议交互、兑换、普通/强制更新、隐私撤回及网络错误的本地可交互设计预览 | v0.2 设计演示，复用 Android 素材；不连接真实 SDK，不执行清理或安装 |
 
 ## 联调时的口径

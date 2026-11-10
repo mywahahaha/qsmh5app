@@ -20,14 +20,14 @@ button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:
 .safe{position:absolute;inset:17px 46px 27px;display:flex;align-items:center;justify-content:center}.portrait .safe{inset:49px 15px 34px}
 .mask{position:absolute;inset:0;background:#00000073;z-index:1}.surface{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;width:100%;height:100%}
 .auth{width:100%;height:100%;background:#eee;border-radius:14px;position:relative;overflow:hidden;color:#555;box-shadow:0 10px 28px #0002}
-.brand-head{position:absolute;top:0;left:0;width:100%;height:43.7px}.brand-head svg{position:absolute;inset:0;width:100%;height:100%}.logo{position:absolute;width:90px;height:30px;object-fit:contain;left:10px;top:2.25px}
-.auth-close{position:absolute;right:0;top:0;width:44px;height:44px;border:0;background:transparent;color:white;font-size:27px;font-weight:200;line-height:1}
-.auth-content{position:absolute;inset:47.7px 9% 8px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px}.number{font-size:28px;line-height:34px;white-space:nowrap;margin:0}.carrier{font-size:12px;color:#999;line-height:16px}
+.brand-head{position:absolute;top:0;left:0;width:100%;height:53.7px}.brand-head svg{position:absolute;inset:0;width:100%;height:100%}.logo{position:absolute;width:102px;height:34px;object-fit:contain;left:10px;top:50%;transform:translateY(-50%)}
+.auth-close{position:absolute;right:0;top:50%;transform:translateY(-50%);width:44px;height:44px;border:0;background:transparent;color:white;font-size:27px;font-weight:200;line-height:1}
+.auth-content{position:absolute;inset:55.7px 9% 8px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:4px}.number{font-size:28px;line-height:34px;white-space:nowrap;margin:0}.carrier{font-size:12px;color:#999;line-height:16px}
 .login-btn{width:100%;min-height:44px;height:44px;background:#f60;border:0;border-radius:5px;color:#fff;font-size:16px;flex:none}.switch-btn{height:44px;min-height:44px;border:0;background:transparent;color:#666;font-size:13px;padding:0 8px}
 .privacy{font-size:12px;line-height:18px;position:relative;width:100%;padding:6px 0 0 36px;min-height:56px;display:block}.privacy a{color:#00f;text-decoration:none}.check{position:absolute;left:-8px;top:-2px;border:0;background:transparent;width:44px;height:44px;padding:10px}.check span{display:block;width:14px;height:14px;border:1px solid #aaa;border-radius:3px;background:#fff;color:#fff;line-height:12px;font-size:11px}.check.on span{background:#f60;border-color:#f60}
-.update-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;max-height:100%;width:100%}.update{background:#fff;border-radius:10.5px;width:100%;overflow:hidden;position:relative;display:flex;flex-direction:column;min-height:0}.update-head{position:relative;background:linear-gradient(90deg,#ffcc1a,#ffb81a);width:100%;aspect-ratio:530/198;flex:none}.update-head img{display:block;width:100%;height:100%;object-fit:contain}.update-head h3{position:absolute;inset:20% 8% auto;color:#fff;font-size:var(--update-title,19px);line-height:1.3;text-align:center;margin:0}
-.update-body{padding:10px 17px 12px;text-align:center;display:flex;flex-direction:column;min-height:0}.update-copy{overflow:auto;min-height:0}.update-desc{color:#ff590c;font-size:var(--update-desc,15px);line-height:1.5}.update-meta{color:#757575;font-size:var(--update-meta,12px);margin:13px 0;line-height:1.7}.update-btn{background:#41be56;border:0;color:#fff;min-height:44px;width:80%;border-radius:50px;font-size:16px;flex:none;align-self:center;margin-top:12px}
-.round-close{border:1.5px solid #ddd;color:#ddd;width:34px;height:34px;min-height:34px;border-radius:50%;background:transparent;font-size:26px;line-height:1}.close-hit{height:44px;width:44px;display:flex;justify-content:center;align-items:center;flex:none}
+.update-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;max-height:100%;width:100%}.update{background:#fff;border-radius:10.5px;width:100%;overflow:hidden;position:relative;display:flex;flex-direction:column;min-height:0}.update-head{position:relative;background:linear-gradient(90deg,#ffcc1a,#ffb81a);width:100%;aspect-ratio:530/158.4;flex:none}.update-head img{display:block;width:100%;height:100%;object-fit:fill}.update-head h3{position:absolute;inset:calc(20% - 5px) 8% auto;color:#fff;font-size:var(--update-title,24px);font-weight:700;line-height:1.04;text-align:center;margin:0}
+.update-body{padding:10px 17px 20px;text-align:center;display:flex;flex-direction:column;min-height:0}.update-copy{overflow:auto;min-height:0}.update-desc{color:#ff590c;font-size:var(--update-desc,18px);line-height:1.5;margin-bottom:10px}.update-meta{color:#757575;font-size:var(--update-meta,13px);margin:0;line-height:1.7;display:flex;justify-content:center;gap:30px;flex-wrap:wrap}.update-btn{background:#41be56;border:0;color:#fff;height:40px;min-height:40px;width:80%;border-radius:50px;font-size:16px;flex:none;align-self:center;margin-top:20px}
+.round-close{position:relative;border:0;width:33px;height:33px;min-height:33px;border-radius:50%;background:#000;font-size:0}.round-close::before,.round-close::after{content:'';position:absolute;left:calc(50% - 7px);top:calc(50% - 1px);width:14px;height:2px;background:#fff;border-radius:2px;transform:rotate(45deg)}.round-close::after{transform:rotate(-45deg)}.close-hit{height:44px;width:44px;display:flex;justify-content:center;align-items:center;flex:none}
 .message{color:#fff;text-align:center;max-width:80%;font-size:14px}.spinner{border:3px solid #ffffff30;border-top-color:#fff;border-radius:50%;width:26px;height:26px;margin:0 auto 16px;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}
 .withdraw{width:min(330px,94%);max-height:100%;overflow:auto;background:#fff;border-radius:14px;padding:20px 16px;color:#454b54;text-align:left}.withdraw h3{font-size:17px;margin:0 0 12px}.withdraw p{font-size:14px;line-height:1.65;margin:0 0 16px}.withdraw-actions{display:flex;gap:12px}.withdraw-actions button{flex:1;min-height:44px;border:0;border-radius:7px;background:#eee;color:#555;font-size:14px}.withdraw-actions button.primary{background:var(--red);color:white}.withdraw .spinner{border-color:#ddd;border-top-color:var(--red)}
 .protocol{width:100%;height:100%;background:white;color:#454b54;display:flex;flex-direction:column}.protocol-nav{background:var(--red);height:48px;color:white;display:flex;align-items:center;justify-content:center;position:relative;flex:none;font-size:17px}.back{position:absolute;left:0;top:0;height:48px;width:44px;border:0;background:none;color:white;font-size:24px}.protocol article{padding:18px 20px;overflow:auto;font-size:13px;line-height:1.9}.protocol h3{font-size:18px}
@@ -37,7 +37,7 @@ button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:
 </style>
 </head>
 <body>
-<header class="page"><div><h1>iOS 原生界面设计预览</h1><div class="meta">骑士盟 H5 游戏壳 · 对齐 Android 品牌与交互 · 2026-11-02 / v0.2</div></div><span class="badge">设计草案 · 不连接真实服务</span></header>
+<header class="page"><div><h1>iOS 原生界面设计预览</h1><div class="meta">骑士盟 H5 游戏壳 · iOS 更新尺寸与样式 · 2026-11-05 / v0.6</div></div><span class="badge">设计草案 · 不连接真实服务</span></header>
 <main>
 <aside>
 <h2>预览设置</h2>
@@ -46,7 +46,7 @@ button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:
 <div><label for="orientation">设备方向</label><select id="orientation"><option value="landscape">横屏 · 844 × 390pt</option><option value="portrait">竖屏 · 390 × 844pt</option></select></div>
 <div><label for="width">配置宽度 <output id="widthValue">60%</output></label><input id="width" type="range" min="40" max="100" value="60"></div>
 <div><label for="height">授权配置高度 <output id="heightValue">100%</output></label><input id="height" type="range" min="40" max="100" value="100"></div>
-<div class="notes"><strong>默认值说明</strong><br>横屏授权预览用 60% × 100%，便于完整展示 iOS 的最小控件；现有 60% × 75% 可用滑杆检查。竖屏示例用 90% × 65%。<br><br>更新卡片宽度另乘 Android 当前缩放 0.7；此预览为 auto 高度。尺寸过小显示回退状态，不以裁切模拟“适配完成”。</div>
+<div class="notes"><strong>默认值说明</strong><br>横屏授权预览用 60% × 100%，便于完整展示 iOS 的最小控件；现有 60% × 75% 可用滑杆检查。竖屏示例用 90% × 65%。<br><br>更新卡片直接使用配置的 dp 或百分比；此预览为 auto 高度。极小的固定尺寸会影响文字和按钮展示，服务端需提供可用尺寸。</div>
 <div class="linkrow"><a href="iOS原生UI设计规范_ios-native-ui-design.md">UI 规范</a><a href="iOS开发总体方案_ios-development-proposal.md">总体方案</a></div>
 </aside>
 <section class="workspace">
@@ -66,9 +66,9 @@ checked:'仅勾选不自动登录。点击登录模拟进入业务兑换；真�
 protocol:'协议详情使用红色导航栏，正文是占位说明；返回恢复授权页和原勾选状态，不自动勾选或取号。',
 exchange:'运营商凭证已取得，仍不表示业务登录成功。无百分比；服务端兑换成功并安全保存 Token 后才能开游戏。',
 h5login:'这里是现有 H5 登录的页面占位。关闭授权、切换方式或兑换失败均创建新的 H5 登录实例；预览不设计或替换现有 H5 内容。',
-update:'黄色头图、白色卡片、绿色按钮和圆形关闭控件沿用 Android。示例宽度应用 0.7 缩放；点击仅演示交接 HTTPS 更新入口，不绑定分发模式。',
+update:'黄色头图、白色卡片、绿色按钮和圆形关闭控件沿用 Android。更新尺寸直接使用 dp 或百分比；点击仅演示交接 HTTP/HTTPS 更新入口，不绑定分发模式。',
 force:'强制状态隐藏关闭；正常返回仍可更新。地址错误或无法打开应提示并放行，不能永久卡住登录。',
-opening:'仅等待系统接受打开 HTTPS 更新入口，没有下载百分比、“已安装”或“立即安装”。预览不实际打开外部网页，分发站点与安装服务不在本次范围。',
+opening:'仅等待系统接受打开 HTTP/HTTPS 更新入口，没有下载百分比、“已安装”或“立即安装”。预览不实际打开外部网页，分发站点与安装服务不在本次范围。',
 withdraw:'需求已确认：可信 H5 设置入口发起，原生二次确认。取消保留游戏，确认后结束会话并清理本机数据；本预览不会删除任何文件。',
 cleaning:'无百分比、防重复操作。可用左侧状态菜单模拟清理成功或失败；这只是 UI 演示，不执行 SDK、Keychain 或网页数据清理。',
 cleanError:'部分数据清理失败也保持隐私撤回，禁止认证与业务请求；提供重试，重启继续清理任务，不因 privacyAuto=false 自动恢复同意。',
@@ -85,11 +85,11 @@ function render(){
  document.querySelector('#widthValue').textContent=wInput.value+'%';document.querySelector('#heightValue').textContent=hInput.value+'%';
  const rw=dw-14-(portrait?30:92),rh=dh-14-(portrait?83:44),cw=rw*Number(wInput.value)/100,ch=rh*Number(hInput.value)/100,s=scene.value;
  document.querySelector('#stateLabel').textContent=scene.selectedOptions[0].textContent;
- document.querySelector('#annotation').textContent=notes[s];document.querySelector('#dimensions').textContent='示例可用区域 '+rw+' × '+rh+'pt；配置授权 '+Math.round(cw)+' × '+Math.round(ch)+'pt；更新宽 '+Math.round(cw*.7)+'pt。文档数值与实机测量优先。';
+ document.querySelector('#annotation').textContent=notes[s];document.querySelector('#dimensions').textContent='示例可用区域 '+rw+' × '+rh+'pt；配置授权 '+Math.round(cw)+' × '+Math.round(ch)+'pt；更新宽 '+Math.round(Math.min(rw,dw*Number(wInput.value)/100))+'pt。文档数值与实机测量优先。';
  if(s==='auth'||s==='checked'){
   lastAuth=s;selected=s==='checked';
   if(cw<260||ch<320){surface.innerHTML='<div class="message"><h3>请选择其他方式登录</h3><p>H5 登录页面占位</p></div>';document.querySelector('#annotation').textContent='此配置在预览中不能完整容纳必要控件，演示回退 H5。实际产品须按 SDK 真实文本和字体测量决定，不把此处 260×320pt 当成硬编码门槛。';return}
-  surface.innerHTML='<div class="auth" style="width:'+cw+'px;height:'+ch+'px"><div class="brand-head"><svg viewBox="0 0 500 43.7" preserveAspectRatio="none"><path d="M14 0H486Q500 0 500 14V43.7Q250 27.1 0 43.7V14Q0 0 14 0Z" fill="#c52d28"/></svg><img class="logo" src="assets/onekey-login/box_logo.png" alt="骑士盟"><button class="auth-close" aria-label="关闭一键登录">×</button></div><div class="auth-content"><div class="number">138****8000</div><div class="carrier">中国移动提供认证服务</div><button class="login-btn">手机号一键登录</button><button class="switch-btn">使用其他方式登录</button><div class="privacy"><button class="check '+(selected?'on':'')+'" aria-label="同意协议" aria-pressed="'+selected+'"><span>'+(selected?'✓':'')+'</span></button><span class="privacy-copy" role="button" tabindex="0">我已阅读并同意</span> <a href="#protocol">《中国移动服务条款》</a>和<a href="#protocol">《用户协议与隐私政策》</a></div></div></div>';
+  surface.innerHTML='<div class="auth" style="width:'+cw+'px;height:'+ch+'px"><div class="brand-head"><svg viewBox="0 0 500 53.7" preserveAspectRatio="none"><path d="M14 0H486Q500 0 500 14V53.7Q250 33.294 0 53.7V14Q0 0 14 0Z" fill="#c52d28"/></svg><img class="logo" src="assets/onekey-login/box_logo.png" alt="骑士盟"><button class="auth-close" aria-label="关闭一键登录">×</button></div><div class="auth-content"><div class="number">138****8000</div><div class="carrier">中国移动提供认证服务</div><button class="login-btn">手机号一键登录</button><button class="switch-btn">使用其他方式登录</button><div class="privacy"><button class="check '+(selected?'on':'')+'" aria-label="同意协议" aria-pressed="'+selected+'"><span>'+(selected?'✓':'')+'</span></button><span class="privacy-copy" role="button" tabindex="0">我已阅读并同意</span> <a href="#protocol">《中国移动服务条款》</a>和<a href="#protocol">《用户协议与隐私政策》</a></div></div></div>';
   const toggle=()=>{selected=!selected;scene.value=selected?'checked':'auth';render()};
   surface.querySelector('.check').onclick=toggle;surface.querySelector('.privacy-copy').onclick=toggle;surface.querySelector('.privacy-copy').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle()}};
   surface.querySelectorAll('.privacy a').forEach(a=>a.onclick=e=>{e.preventDefault();setScene('protocol')});
@@ -117,8 +117,8 @@ function render(){
  }else if(s==='error'){
   surface.innerHTML='<div class="errorbox"><h3>页面暂时无法加载</h3><p>请检查网络后重试</p><p>错误码：H5_HTTP_503</p><div class="error-actions"><button>重试</button><button>应用设置</button></div></div>';surface.querySelectorAll('button').forEach(b=>b.onclick=()=>toast(b.textContent==='重试'?'重新开始页面加载':'由系统打开本应用设置'));
  }else{
-  const uw=cw*.7;if(uw<210){surface.innerHTML='<div class="message">继续登录</div>';document.querySelector('#annotation').textContent='更新卡片过窄，预览演示配置不可用后放行。可增大配置宽度；实际产品按内容测量判断。';return}
-  surface.innerHTML='<div class="update-wrap" style="width:'+uw+'px;--update-title:'+Math.max(18,40*uw/530)+'px;--update-desc:'+Math.max(14,30*uw/530)+'px;--update-meta:'+Math.max(12,18*uw/530)+'px"><div class="update"><div class="update-head"><img src="../android/app/src/main/res/drawable-nodpi/update_header.png" alt=""><h3>邀您体验新版本</h3></div><div class="update-body"><div class="update-copy"><div class="update-desc">发现新版本，体验优化</div><div class="update-meta">版本号：1.1.0<br>更新时间：2026-11-02</div></div><button class="update-btn">'+(s==='opening'?'正在打开…':'立即更新')+'</button></div></div>'+(s==='update'?'<div class="close-hit"><button class="round-close" aria-label="关闭更新">×</button></div>':'')+'</div>';
+  const uw=Math.min(rw,dw*Number(wInput.value)/100);
+  surface.innerHTML='<div class="update-wrap" style="width:'+uw+'px;--update-title:24px;--update-desc:18px;--update-meta:13px"><div class="update"><div class="update-head"><img src="../android/app/src/main/res/drawable-nodpi/update_header.png" alt=""><h3>邀您体验新版本</h3></div><div class="update-body"><div class="update-copy"><div class="update-desc">发现新版本，体验优化</div><div class="update-meta"><span>最新版本：1.1.0</span><span>更新时间：2026-11-02</span></div></div><button class="update-btn">'+(s==='opening'?'正在打开…':'立即更新')+'</button></div></div>'+(s==='update'?'<div class="close-hit"><button class="round-close" aria-label="关闭更新">×</button></div>':'')+'</div>';
   surface.querySelector('.update-btn').onclick=()=>setScene('opening');const close=surface.querySelector('.round-close');if(close)close.onclick=()=>toast('关闭更新，继续登录');
  }
 }

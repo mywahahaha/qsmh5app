@@ -10,7 +10,7 @@ import Foundation
     private var generation: UInt64 = 0
     private var started = false
 
-    init(interval: Int, sleep: @escaping Sleep = { try await ContinuousClock().sleep(for: .seconds($0)) },
+    init(interval: Int, sleep: @escaping Sleep = { try await Task<Never, Never>.sleep(nanoseconds: UInt64(max(0, $0)) * 1_000_000_000) },
          poll: @escaping @MainActor () async throws -> Data, deliver: @escaping @MainActor (Data) -> Void) {
         self.interval = interval; self.sleep = sleep; self.poll = poll; self.deliver = deliver
     }

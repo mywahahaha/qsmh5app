@@ -28,11 +28,11 @@
 | 图片 | 默认/激活两张初始化图片，等比例显示；同 URL/状态不重复请求，已成功图片在会话中缓存；GIF 首帧 |
 | 会话退出 | logout、关闭游戏、重新初始化重置 show 与 active、停止心跳，旧响应不再生效 |
 
-iOS 的悬浮容器为 safeArea，Android 当前为全屏悬浮层；两端在各自容器内用相同公式。iOS 不再额外增加安全区边距。触摸阈值 Android 当前为 8px，iOS 为 8pt，以逻辑触摸单位适配。
+iOS 的悬浮容器**水平覆盖整个窗口**，右侧 `right: 0` 贴屏幕右边，左侧 `left: 0` 贴屏幕左边；**纵向继续使用 safeArea**，避免系统顶部和底部操作区。Android 当前为全屏悬浮层；两端在各自容器内用相同公式。iOS 不再额外增加水平安全区边距。触摸阈值 Android 当前为 8px，iOS 为 8pt，以逻辑触摸单位适配。
 
 ## 心跳规则与本轮边界
 
-`popupInterval` 需要有效 HTTPS URL、正整数秒数 interval；Debug-Local 仅允许指定本地 HTTP 来源。游戏就绪且球第一次实际显示后启动，等待完整 interval，POST `{}` 并携带统一六项 Header。请求完成后才等待下一周期，不并发、不补发。
+`popupInterval` 需要有效 HTTPS URL、正整数秒数 interval；Debug-Local 仅允许指定本地 HTTP 来源。游戏就绪且球第一次实际显示后启动，等待完整 interval，POST `{}` 并携带当前统一 Header。请求完成后才等待下一周期，不并发、不补发。
 
 成功响应示例：
 
@@ -64,7 +64,7 @@ QSMH5APP.setFloatingBall({show: true, active: false}, function (result) {
 - [FloatingBallHeartbeat.swift](../ios/Core/FloatingBallHeartbeat.swift)：串行计时、前后台暂停及旧响应隔离。
 - [AppCoordinator.swift](../ios/Core/AppCoordinator.swift)：游戏就绪、窗口栈、Bridge 与心跳状态合并。
 - [FloatingBallView.swift](../ios/Features/FloatingBallView.swift)：图片、纵向拖动、点击和空白区域透传。
-- [RootViewController.swift](../ios/App/RootViewController.swift)：独立安全区域悬浮层。
+- [RootViewController.swift](../ios/App/RootViewController.swift)：独立悬浮层，水平全窗口、纵向安全区域。
 - [WebPageController.swift](../ios/Features/WebPageController.swift)：主文档可见通知；普通置顶不导航，显式 `changeGameUrl` 才加载地址。
 
 窗口复用同时修正一处问题：游戏已切到新地址后，普通 `openMiniWindow` 置顶不能又加载初始化 URL。福利返回也保留游戏原文档及 JS 状态。
@@ -91,4 +91,16 @@ QSMH5APP.setFloatingBall({show: true, active: false}, function (result) {
 QSM_SIMULATOR_ID=实际设备UUID ios/Scripts/run_tests.sh
 ```
 
-新增本地场景 `floatball`、`floatball-hidden`、`floatball-heartbeat`；只供 Debug-Local，生产包无本地入口。前两者用于显隐、拖动与福利复用；最后一项每两秒轮询，首次响应隐藏并激活，后续响应恢复激活状态。
+新增本地场景 `floatball`、`floatball-edge`、`floatball-hidden`、`floatball-heartbeat`；只供 Debug-Local，生产包无本地入口。`floatball-edge` 返回 `right: 0`，用于检查球体是否贴屏幕右边；其他场景用于显隐、拖动与福利复用，心跳场景每两秒轮询，首次响应隐藏并激活，后续响应恢复激活状态。
+
+## 2026-11-04：`right: 0` 贴边修复
+
+真机截图显示横屏右侧悬浮球离屏幕边缘还有较大距离。根因是旧容器整体使用 `safeAreaLayoutGuide.layoutFrame`，横屏设备的右侧安全区先缩小容器；布局公式虽然算出容器内 `right=0`，仍只能贴到**安全区**右边。
+
+现在悬浮层水平使用根视图完整宽度，纵向仍保持原安全区起点与高度。原有 `left/right` 优先级、360 宽度基准、`top/bottom` 和纵向拖动逻辑不变。对于 `right: 0`，球体 `maxX` 等于屏幕 `maxX`；非零偏移也从实际屏幕边缘计算。游戏 H5 即使因自身画面比例出现黑边，也不影响原生悬浮球的屏幕边缘定位。
+
+- 新增 `floatball-edge` UI 用例通过，直接断言球体右边等于应用窗口右边；系统横屏截图已导出并检查：`ios/artifacts/悬浮球贴边截图_20261104/33CAD9E3-F79C-47DD-8CC6-3D4A17E80625.png`。
+- 既有悬浮球单元测试 10 项通过，纵向拖动、福利覆盖和返回的 UI 用例复核通过：`ios/artifacts/test-run.OO6I7H/Tests.xcresult`。
+- 使用游戏 92“天尊传奇”的现有图标、横版闪图、Bundle ID `com.un74meng.tzcq` 和最新签名描述文件，生成版本 1.0.1、构建 3 的 Ad Hoc IPA：`ios/artifacts/交付_20261104_天尊传奇_悬浮球贴边_build3/92_com.un74meng.tzcq_1.0.1_3_AdHoc.ipa`。最终严格验签通过；最低系统 iOS 14.0，空渠道包无 `packCode` 目录。SHA-256：`4ffb6192dabfd35d11a73e4c9c1db774a6936b5adc074dcaad89f8253ad084f8`。
+
+截图是本地替身页面的几何验证，真实游戏画面与设备方向仍需用户安装构建 3 后复验。用户保存的游戏 92 构建 2 配置和产物均未覆盖。

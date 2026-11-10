@@ -25,11 +25,11 @@ node --test ios/Tests/*.cjs 示例/bridge-script.test.js 示例/qsm-jsbridge.tes
 
 可设置 `QSM_SIMULATOR_ID` 指定实际模拟器 UUID。脚本自动准备服务并运行 XCTest/XCUITest；日志、HTTP 接收记录和 `.xcresult` 位于 `artifacts/test-run.*`。只关闭该次任务启动的模拟器和服务。
 
-本地服务提供初始化失败、缺 code、无需协议、Token 失效等场景。XCUITest 用 `QSM_LOCAL_SCENARIO` 选择它们。认证 Gateway 用单元测试替身验证展示、兑换和晚回调，真实 SDK 不编入 `Debug-Local`。
+本地服务提供初始化失败、缺 code、无需协议、Token 失效、首次联网等待等场景。XCUITest 用 `QSM_LOCAL_SCENARIO` 选择它们。认证 Gateway 用单元测试替身验证展示、兑换和晚回调，真实 SDK 默认不编入 `Debug-Local`。
 
 ## 真实服务构建
 
-`QSMH5App-Integration` 使用 `Debug-Integration`；`Release` 用于设备归档。固定初始化地址为 `https://box.74meng.com/h5_app/init`，原生业务请求附带六项 Header，渠道码默认空。没有全局 HTTP/TLS 放行。
+`QSMH5App-Integration` 使用 `Debug-Integration`；`Release` 用于设备归档。固定初始化地址为 `https://box.74meng.com/h5_app/init`，原生业务请求附带八项 Header，渠道码默认空。没有全局 HTTP/TLS 放行。
 
 包内游戏地址是用户指定的：
 
@@ -43,11 +43,17 @@ https://box.74meng.com/h5/play?gid=29&sid=1&cid=218&app=1&xid=0
 
 ## iOS 渠道目录读取
 
-当前构建号为 `3`。渠道码不再读取 Info.plist 或编译变量：启动时从主 Bundle 的父目录枚举所有直接下级 `.app` 目录，依次找 `packCode` 的直接子目录，取目录名作为渠道码。它对应 IPA 中的 `Payload/*.app/packCode/渠道目录名/`，不依赖 `QSMH5App.app` 这个固定名称。
+渠道码不读取 Info.plist 或编译变量：构建 8 起，安装后直接从当前 `Bundle.main.bundleURL/packCode/` 枚举直接子目录，取目录名作为渠道码，不依赖 `QSMH5App.app` 这个固定名称。不能先枚举主 Bundle 的父目录，真机沙盒不保证允许列出安装容器。离线读取已解压 IPA 时，`read(payloadDirectory:)` 仍可枚举 `Payload/*.app/packCode/渠道目录名/`。
 
-例如 `Payload/QSMH5App.app/packCode/1-218/` 返回 `1-218`。缺目录、读取失败、路径是文件、符号链接及非法 Header 名称均无异常地回退为空；不阻塞其他流程。多个候选按应用目录名、渠道目录名升序选择首个有效目录。只读取直接子目录，不扫描任意深层资源。
+例如 `Payload/QSMH5App.app/packCode/1-218/` 返回 `1-218`。缺目录、读取失败、路径是文件、符号链接及非法 Header 名称均无异常地回退为空；不阻塞其他流程，也不创建任何目录。多个渠道候选按目录名升序选择首个有效目录；运行时只读取自身应用，不读取同级应用。离线枚举多个应用时按应用名、渠道名排序。只读取直接子目录，不扫描任意深层资源。
 
-`RuntimeConfiguration` 将读取结果存入 `GameIdentity.packageCode`，`getGameInfo.data.packageCode` 与原生请求 `Packagecode` Header 共用该值；H5 请求通过通用包装读取信息后设置 Header。未分包母包两处均为空。
+`RuntimeConfiguration` 将读取结果存入 `GameIdentity.packageCode`，`getGameInfo.data.packageCode` 与原生请求 `Packagecode` Header 共用该值；H5 请求通过通用包装读取信息后设置 Header。未分包母包两处均为空。原生接口另附 `Notchscreen` Header：iPhone 当前安全区域显示屏幕开孔时为 `1`，否则为 `0`。JS Bridge 的 `getGameInfo.data.notchScreen` 使用同一判断，返回数字 `1` 或 `0`。H5 可用它选择刘海屏布局；它不替代 H5 自身的安全区域适配。
+
+屏幕方向使用 `horizontal` / `vertical` 两个值。`getGameInfo.data.screenMode`、原生请求和公共 Axios 包装的 `Screenmode` Header 都读取当前界面方向。`changeScreenmode({mode})` 可强制切换横竖屏；目标方向与当前方向相同时直接返回 `data=true`，非法参数返回 `code=1001,msg="参数无效",data=false`。出包器仍按游戏配置决定初始方向，但最终包同时声明横竖屏能力，以便运行中切换。
+
+### 原生版本更新
+
+隐私同意后、登录前读取初始化响应的 `updateInfo`。有效配置的 `open=1` 即显示原生更新弹窗，是否需要提示由服务端决定；客户端不再额外比较目标版本。宽度和高度纯数字按 dp（1 dp = 1 pt）计算，带 `%` 按屏幕比例计算，`height="auto"` 按内容自适应。标题、说明、版本、日期及强制标记沿用服务端字段，弹窗使用黄色头图、绿色按钮和 45% 黑色遮罩。普通更新可关闭并登录；强制更新不显示关闭按钮，从外部入口返回后仍可再次打开。点击“立即更新”由系统浏览器打开服务端提供的 HTTP/HTTPS iOS 更新说明或安装引导页。URL 无效、指向 APK 或系统拒绝打开时结束本次更新检查并继续登录。iOS 不下载或安装 APK，也不直接安装 IPA；服务端应按 `Devicetype=ios` 下发 iOS 专用更新入口。极小的固定宽高不会阻止弹窗，但可能无法容纳完整内容，需由服务端提供可用尺寸。
 
 渠道修复历史母包：`artifacts/交付_20261102_渠道读取修复_AdHoc/全民红月_1.0.1_2_母包_AdHoc.ipa`。悬浮球新版交付见下节。**请使用新版母包重新执行现有分包脚本**，旧版二进制仅新增目录不会获得新逻辑。Ad Hoc 仅限 profile 中登记的 6 台设备；本轮未执行真机安装。
 
@@ -100,6 +106,36 @@ ios/Scripts/archive_unsigned.sh
 - `Tests/`、`UITests/`：规则/替身和真实模拟器 UI 回归。
 - `Scripts/`：环境、运行、测试、SDK 安装、归档和签名检查。
 
-尚未完成角色、心跳运营窗口同步、原生更新 UI、常亮、正式 SDK 品牌授权弹窗、图标与闪图完整资产映射，以及多游戏出包。本轮明确返回未支持方法的错误；启用更新的配置会提示当前阶段未接入，不静默跳过强制更新。
+尚未完成角色、心跳运营窗口同步、原生更新 UI 和常亮。本轮明确返回未支持方法的错误；启用更新的配置会提示当前阶段未接入，不静默跳过强制更新。SDK 品牌授权弹窗已在构建 7 接入，真机视觉与取号交互仍需用户复验。
 
 工程文件已提供，日常构建无需 Ruby/CocoaPods。以后新增 Swift 文件，可手工加入 target，或用安装了 `xcodeproj` 的 Ruby 执行 `Scripts/generate_project.rb` 重新生成工程；重新生成会更新工程 UUID。
+
+
+## 图片与多游戏打包器（构建 4）
+
+2026-11-03 已接入初始化 `bgImage` 背景、本地闪图、透明容器与首帧淡入；正式图标和闪图按每游戏配置生成。默认系统启动画面为静态黑底；等待初始化联网期间保留应用内闪图，初始化成功后采用 1.2–5 秒时序。需要透出底图的 H5 页面自身背景应透明。
+
+Mac 图形工具位于 `artifacts/iOS游戏打包器_正式.app`，支持选择游戏 ID、图标、闪图、方向、签名身份及描述文件。使用[打包器指南](Packager/使用指南_usage.md)开始操作；[实施记录](../docs/iOS图片与打包器实施记录_ios-assets-packager-development.md)列出验证结果与当前边界。
+
+原归档/签名命令现调用通用后端，可传 `--config`；默认使用 `Packager/游戏29示例_game29.json`。版本为 1.0.1、构建号 4，当前描述文件登记 7 台设备；上文构建 3 及更早路径与 6 台记录为历史结果。新包以本次摘要和安装说明为准。
+
+
+空渠道目录修正：渠道码为空时不打入 `packCode/` 根目录或任何渠道子目录。新母包见 `artifacts/交付_20261103_空渠道无目录_AdHoc/`；Mac 工具内置后端已同步更新。
+
+## 首次联网及授权方向修复（构建 6）
+
+用户已确认构建 5 真机安装和桌面图标正常，并反馈首次联网错误白屏、同意隐私后及后续启动闪退。本轮增加初始化网络等待与自动重试，阿里云授权页方向改为与包内支持方向一致；具体证据、测试、日志提取及待真机复验项见[修复记录](../docs/iOS首次联网与授权闪退修复_ios-startup-auth-fix.md)。
+
+构建 6 沿用用户的游戏 29、横屏、空渠道、图标和横版闪图配置；`game_url` 为空，游戏地址取初始化接口。本节为最新修复包口径，上文构建 4 的默认示例及历史地址说明保留作参考；用户保存的构建 5 配置未覆盖。
+
+## 授权品牌 UI 与 H5 真全屏（构建 7）
+
+已将文档中的弧形红头、骑士盟 Logo、橙色主按钮、协议和关闭操作接入 SDK 公开配置，按服务端百分比布局并检查紧凑窗口完整性。所有业务 H5 禁用原生页面拖动、回弹、缩放和滚动条；宽高同时为 `100%` 时覆盖整个宿主窗口，H5 自行适配安全区。实现、测试、真机复验及最新 IPA 见[授权 UI 与全屏修复记录](../docs/iOS授权品牌UI与全屏容器修复_ios-auth-ui-fullscreen.md)。
+
+## iOS 14.4.2 兼容（构建 9）
+
+当前工程最低运行系统改为 iOS 14.0，已同步公共配置、工程和工程生成脚本。iOS 15/16 才有的 Bridge、图片下载和时钟 API 已替换或加可用性分支；新的签名包内嵌 2026-11-04 更新的 Ad Hoc 描述文件及 Swift 并发回移运行库。游戏 29 的空渠道母包与 `1-218` 渠道包、测试证据和 iPhone 8 Plus 复验清单见[兼容实施记录](../docs/iOS14兼容实施记录_ios14-compatibility.md)。
+
+## 悬浮球 `right: 0` 屏幕贴边（游戏 92 构建 3）
+
+横屏时悬浮球原先以安全区域为整个容器，右侧安全区导致 `right: 0` 仍离屏幕边缘较远。现在水平使用完整窗口，纵向继续使用安全区域；对应本地 UI 断言、截图和“天尊传奇”签名包见[悬浮球记录](../docs/iOS悬浮球需求与实现_ios-floating-ball.md)。

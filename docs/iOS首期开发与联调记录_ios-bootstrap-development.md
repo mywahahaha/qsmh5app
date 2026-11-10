@@ -16,7 +16,7 @@
 
 | 模块 | 已实现内容 |
 | --- | --- |
-| 初始化 | 固定生产初始化地址；六项原生 HTTP Header；严格校验响应、页面、布局和来源；隐私前不生成设备码、不发送登录 Token |
+| 初始化 | 固定生产初始化地址；八项原生 HTTP Header；严格校验响应、页面、布局和来源；隐私前不生成设备码、不发送登录 Token |
 | 隐私 | 同意、拒绝、重新选择、撤回确认；Keychain/WebKit/本地状态清理；撤回中断后继续清理 |
 | 登录 | Keychain Token 自动登录；H5 登录成功回调；业务失效清 Token、网络失败保留；退出登录、后台和旧请求响应隔离 |
 | 容器 | 配置驱动的协议、登录、游戏、福利页面；横屏安全区域；加载错误、有限 GET 重试、TLS 错误拦截；不自动重放 POST |
@@ -96,8 +96,10 @@ UI 测试先于最后的后台 Token 修复完成；该修复后重新运行 28 
 
 ## 渠道读取与 H5 兼容性更新（2026-11-02，构建 2）
 
+后续修正：构建 8 已将安装后的入口改为直接读取自身 Bundle 内的渠道，避免真机沙盒拒绝列出父目录；下方记录为当时的离线/模拟器验证，不代表该问题已在构建 2 真机验收。见[渠道读取与授权标题修复](iOS渠道读取与授权标题修复_ios-channel-auth-header-fix.md)。
+
 - 新增 `Core/ChannelCodeReader.swift`，从主 Bundle 父目录枚举 `.app/packCode` 的直接子目录，目录名作为渠道码；所有缺失/读取错误返回空，不阻塞业务。移除旧 Info.plist 渠道字段和编译变量，原生 Header 与 Bridge 共享启动时读取的 `GameIdentity`。
-- 使用用户样本 `/Users/cyang/Downloads/qmhy_1-218.ipa` 解包验证，原生 Swift 读取器、生产 `RuntimeConfiguration` 和 `Packagecode` Header 均得到 `1-218`。样本自身严格验签通过，原文件未修改。验证工具仅在本机执行读取逻辑，不执行 IPA 的 iPhone 二进制。
+- 使用用户样本 `~/Downloads/qmhy_1-218.ipa` 解包验证，原生 Swift 读取器、生产 `RuntimeConfiguration` 和 `Packagecode` Header 均得到 `1-218`。样本自身严格验签通过，原文件未修改。验证工具仅在本机执行读取逻辑，不执行 IPA 的 iPhone 二进制。
 - 新母包渠道为空；临时副本创建 `packCode/1-218` 后同一读取链路得到 `1-218`，副本严格验签通过，临时副本随后清理。母包和样本验证明细位于新交付目录 `渠道读取验证.json`。
 - XCTest：8 项渠道边界 + 29 项核心全部通过，含 `.app` 改名、多应用、目录缺失、普通文件、符号链接、非法 Header 字符、旧 plist 不回退，以及隐私前后 Bridge/HTTP 渠道一致性。证据：`ios/artifacts/test-run.ibaGJm/Tests.xcresult`。
 - 本轮选取两项 UI 回归：窗口复用/URL 切换/Bridge/关闭游戏通过；空渠道 Header 用例首次在协议到登录页切换等待失败，单独复核通过，未复现该失败。复核证据：`ios/artifacts/test-run.4nkFMO/Tests.xcresult`。未将首次有失败的测试批次记录为全套通过。

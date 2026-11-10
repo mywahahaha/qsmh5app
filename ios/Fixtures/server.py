@@ -8,11 +8,13 @@ import threading
 import time
 import struct
 import zlib
+import socket
 from urllib.parse import urlparse, parse_qs
 
 RECORDS = []
 LOCK = threading.Lock()
 ROOT = Path(__file__).resolve().parent
+NETWORK_RELEASED = threading.Event()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,7 +40,7 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/__requests":
             with LOCK:
                 return self.send(list(RECORDS))
-        if url.path in ["/images/default.png", "/images/active.png"]:
+        if url.path in ["/images/default.png", "/images/active.png", "/images/background.png"]:
             with LOCK:
                 RECORDS.append({"path": url.path, "type": "image"})
             color = (35, 160, 85) if url.path.endswith("default.png") else (220, 40, 60)
@@ -54,27 +56,47 @@ class Handler(BaseHTTPRequestHandler):
             if name not in ["agreement", "login", "game", "welfare"]:
                 return self.send({}, 404)
             text = (ROOT / "page.html").read_text().replace("__PAGE__", name)
-            floating = parse_qs(url.query).get("scenario", [""])[0].startswith("floatball")
+            scenario = parse_qs(url.query).get("scenario", [""])[0]
+            if scenario == "slow-page":
+                time.sleep(3)
+            if scenario.startswith("background"):
+                text = text.replace("</style>", "html,body{background:transparent}body{font-size:14px;padding:8px}h1{font-size:20px}</style>")
+            if scenario == "fullscreen":
+                text = text.replace(",viewport-fit=cover", "")
+                text = text.replace("</style>", "html,body{margin:0;background:#24599b;min-height:200vh}body{box-sizing:border-box;padding:8px max(18px,env(safe-area-inset-left));color:white;font-size:13px}h1{font-size:18px;margin:3px 0}p{margin:4px 0}button,a{padding:8px 10px;margin:3px 5px 3px 0}#result{color:#222}</style>")
+            floating = scenario.startswith("floatball")
             if floating:
                 text = text.replace("</style>", "body{font-size:13px;padding:8px 18px}h1{font-size:18px;margin:4px 0}p{margin:5px 0}button,a{padding:8px 10px;margin:3px 5px 3px 0}</style>")
             controls = '<button onclick="call(\'setFloatingBall\',{show:true,active:true})">显示激活悬浮球</button><button onclick="call(\'setFloatingBall\',{show:false,active:true})">隐藏悬浮球</button><button onclick="call(\'setFloatingBall\',{show:true,active:false})">恢复默认悬浮球</button>' if floating else ""
+            if scenario == "fullscreen":
+                controls = '<button onclick="document.getElementById(\'result\').textContent=\'页面滚动：\'+window.scrollY">检查页面滚动</button>'
             welfare = '<button onclick="call(\'setFloatingBall\',{show:false,active:true})">福利中隐藏激活球</button><button onclick="call(\'changeGameUrl\',{url:gameURL()})">换地址返回游戏</button>' if floating else ""
             text = text.replace("__FLOATING_CONTROLS__", controls).replace("__WELFARE_CONTROLS__", welfare)
             return self.send(text, content_type="text/html; charset=utf-8")
         return self.send({}, 404)
 
     def do_POST(self):
+        if self.path == "/__network/reset":
+            NETWORK_RELEASED.clear(); return self.send({"ok": True})
+        if self.path == "/__network/release":
+            NETWORK_RELEASED.set(); return self.send({"ok": True})
         length = int(self.headers.get("Content-Length", "0"))
         if length > 262144:
             return self.send({}, 413)
         body = self.rfile.read(length)
         with LOCK:
             RECORDS.append({"path": self.path, "headers": {key: self.headers.get(key) for key in
-                ["Gameid", "Gameversion", "Packagecode", "Devicetype", "Devicecode", "Accountoken"]},
+                ["Gameid", "Gameversion", "Packagecode", "Devicetype", "Devicecode", "Accountoken", "Notchscreen", "Screenmode"]},
                 "body": json.loads(body or b"{}")})
         parts = urlparse(self.path).path.split("/")
         scenario = parts[2] if len(parts) > 3 and parts[1] == "scenario" else "normal"
         if self.path.endswith("h5_app/init"):
+            if scenario == "network-wait" and not NETWORK_RELEASED.is_set():
+                self.close_connection = True
+                try: self.connection.shutdown(socket.SHUT_RDWR)
+                except OSError: pass
+                self.connection.close()
+                return
             if scenario == "init-error":
                 return self.send({"code": 100, "msg": "本地初始化失败"})
             if scenario == "invalid-code":
@@ -87,11 +109,24 @@ class Handler(BaseHTTPRequestHandler):
                 auth = {"open": 1, "config": {"scheme_secret": "local-test-secret", "exchange_url": base + "/exchange", "launch_total_timeout_ms": 1000}}
             data = {"privacyAuto": scenario != "no-privacy", "h5Pages": pages,
                 "jumpDomain": [], "aliyunOnekeyConfig": auth, "updateInfo": {"open": 0}}
+            if scenario.startswith("update-"):
+                data["updateInfo"] = {"open": 1, "width": "80%", "height": "auto", "force": 1 if scenario == "update-force" else 0,
+                    "title": "邀您体验新版本", "desc": "发现新版本，体验优化", "version": "1.0.2", "time": "2026-11-04",
+                    "url": "https://example.com/ios-update"}
+                if scenario == "update-invalid": data["updateInfo"]["url"] = "https://example.com/app.apk"
+            if scenario in ["background", "background-fail", "slow-page", "fullscreen"]:
+                for page in pages.values():
+                    page["url"] += "?scenario=" + scenario
+                if scenario.startswith("background"):
+                    data["bgImage"] = base + ("/images/background.png" if scenario == "background" else "/images/missing.png")
+                    for page in pages.values():
+                        page["width"] = "80%"; page["left"] = "center"
             if scenario.startswith("floatball"):
                 for page in pages.values():
                     page["url"] += "?scenario=" + scenario
                 data["floatball"] = {"show": scenario != "floatball-hidden", "image_default": base + "/images/default.png",
-                    "image_active": base + "/images/active.png", "width": 36, "height": 36, "right": 10, "top": 0.2}
+                    "image_active": base + "/images/active.png", "width": 36, "height": 36,
+                    "right": 0 if scenario == "floatball-edge" else 10, "top": 0.2}
                 if scenario == "floatball-heartbeat":
                     data["popupInterval"] = {"url": base + "/scenario/floatball-heartbeat/poll", "interval": 2}
             return self.send({"code": 0, "msg": "ok", "data": data})

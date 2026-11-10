@@ -1,4 +1,5 @@
 import UIKit
+import ImageIO
 
 // 空白部分透传给 WebView，只有球体自身接收触摸。
 @MainActor final class FloatingBallLayer: UIView {
@@ -53,8 +54,29 @@ import UIKit
         let transport = URLSessionTransport()
         var request = URLRequest(url: url); request.timeoutInterval = 5
         guard let (data, status) = try? await transport.send(request), (200..<300).contains(status), data.count <= 10_000_000 else { return nil }
-        // 与 Android BitmapFactory 一致，GIF 使用静态首帧；不额外下载或重建动画视图。
-        return UIImage(data: data)
+        return decodeImage(data)
+    }
+    static func decodeImage(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = CGImageSourceGetCount(source)
+        guard count > 0 else { return nil }
+        guard CGImageSourceGetType(source) as String? == "com.compuserve.gif", count > 1 else { return UIImage(data: data) }
+        // 限制解码后的总像素，避免远程 GIF 虽小却占用过多内存。
+        guard count <= 180 else { return UIImage(data: data) }
+        var frames: [UIImage] = []
+        var duration: TimeInterval = 0
+        var pixels = 0
+        for index in 0..<count {
+            guard let image = CGImageSourceCreateImageAtIndex(source, index, nil) else { return nil }
+            pixels += image.width * image.height
+            guard pixels <= 20_000_000 else { return UIImage(data: data) }
+            frames.append(UIImage(cgImage: image))
+            let gif = (CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any])?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let delay = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? NSNumber)?.doubleValue
+                ?? (gif?[kCGImagePropertyGIFDelayTime] as? NSNumber)?.doubleValue ?? 0.1
+            duration += max(0.02, delay)
+        }
+        return UIImage.animatedImage(with: frames, duration: duration)
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let parent = superview, let touch = touches.first else { return }

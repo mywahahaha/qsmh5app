@@ -19,6 +19,11 @@ test('保留非对象错误参数、请求 id 和原方法', () => {
   window.QSMH5APP.getGameInfo(false, () => {});
   assert.deepEqual(requests.map(x => [x.id, x.method, x.args]), [['1', 'getLocalStorage', 123], ['2', 'getGameInfo', false]]);
 });
+test('注册屏幕方向切换方法并原样发送参数', () => {
+  const {window, requests} = make();
+  window.QSMH5APP.changeScreenmode({mode: 'horizontal'}, () => {});
+  assert.deepEqual(requests[0], {documentID: 'document-one', id: '1', method: 'changeScreenmode', args: {mode: 'horizontal'}});
+});
 test('按文档和 id 路由并发回调且最多一次', () => {
   const {window} = make(), results = [];
   window.QSMH5APP.getGameInfo({}, r => results.push(['one', r.data]));

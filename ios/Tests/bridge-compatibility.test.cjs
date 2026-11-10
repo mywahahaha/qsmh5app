@@ -30,11 +30,12 @@ for (const platform of ['android', 'ios']) {
     const pending = intercept({url: '/api/test', headers: {}});
     const req = b.requests.at(-1);
     assert.equal(req.method, 'getGameInfo');
-    b.reply(req.id, {code: 0, msg: 'ok', data: {packageCode: '1-218', deviceType: platform, gameId: 29, gameVersion: '1.0.1', deviceCode: '', accountToken: ''}});
+    b.reply(req.id, {code: 0, msg: 'ok', data: {packageCode: '1-218', deviceType: platform, gameId: 29, gameVersion: '1.0.1', deviceCode: '', accountToken: '', screenMode: 'horizontal'}});
     const config = await pending;
     assert.equal(config.headers.Packagecode, '1-218');
     assert.equal(config.headers.Devicetype, platform);
     assert.equal(config.headers.Accountoken, '');
+    assert.equal(config.headers.Screenmode, 'horizontal');
   });
   test(`${platform} 公共签名支持省略参数及存储非字符串值归一化`, () => {
     const b = bridge(platform);

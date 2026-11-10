@@ -5,6 +5,9 @@ protocol HTTPTransport {
 }
 
 private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
+    let waiting: @Sendable () -> Void
+    init(waiting: @escaping @Sendable () -> Void) { self.waiting = waiting }
+    func urlSession(_ session: URLSession, taskIsWaitingForConnectivity task: URLSessionTask) { waiting() }
     func urlSession(_ session: URLSession, task: URLSessionTask,
                     willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
                     completionHandler: @escaping (URLRequest?) -> Void) {
@@ -14,12 +17,13 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
 
 final class URLSessionTransport: HTTPTransport {
     private let session: URLSession
-    init() {
+    init(onWaitingForConnectivity: @escaping @Sendable () -> Void = {}) {
         let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = true
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 30
         configuration.httpCookieStorage = nil
-        session = URLSession(configuration: configuration, delegate: NoRedirectDelegate(), delegateQueue: nil)
+        session = URLSession(configuration: configuration, delegate: NoRedirectDelegate(waiting: onWaitingForConnectivity), delegateQueue: nil)
     }
     func send(_ request: URLRequest) async throws -> (Data, Int) {
         let (data, response) = try await session.data(for: request)

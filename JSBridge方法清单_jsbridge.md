@@ -3,8 +3,8 @@
 ## 文档信息
 
 - 项目：qishimeng_h5_sdk
-- 文档版本：v0.17
-- 更新日期：2026-11-02
+- 文档版本：v0.18
+- 更新日期：2026-11-10
 - 状态：业务规则已对齐需求文档；Bridge 签名仍需 Android/H5 联调确认
 
 ## 1. 概述与通用约定
@@ -67,6 +67,7 @@ QSMH5APP.getAccountToken({}, function (result) {
 | `getAccountToken` | H5 → 原生 | 登录 | 获取本地缓存的 accountToken |
 | `logout` | H5 → 原生 | 登录 | 退出登录，清理会话 |
 | `getGameInfo` | H5 → 原生 | 游戏信息 | 获取游戏相关信息 |
+| `changeScreenmode` | H5 → 原生 | 屏幕方向 | 强制切换当前应用的横竖屏方向 |
 | `saveGameRole` | H5 → 原生 | 游戏角色 | 按游戏 ID 全量替换角色信息 |
 | `getGameRole` | H5 → 原生 | 游戏角色 | 按游戏 ID 获取本地角色信息 |
 | `saveLocalStorage` | H5 → 原生 | 本地存储 | 以键值对象或键值对象数组保存数据，同名 key 覆盖 |
@@ -182,11 +183,27 @@ QSMH5APP.logout({}, function (result) {
   - `accountToken`：登录成功后安全存储的登录凭证；未登录时为空字符串。
   - `deviceType`：客户端类型，Android 返回 `android`，iOS 返回 `ios`。
   - `deviceCode`：设备码；未同意隐私协议时为空字符串。
+  - `screenMode`：当前应用方向，横屏为 `horizontal`，竖屏为 `vertical`。
 
 ```js
 QSMH5APP.getGameInfo({}, function (result) {
   if (result.code === 0) {
     var gameInfo = result.data;
+  }
+});
+```
+
+#### `changeScreenmode`
+
+- 说明：将当前应用强制切换为横屏或竖屏。当前方向已经等于目标方向时不重复执行切换，仍返回成功。
+- 参数：`mode` 必填；横屏传 `horizontal`，竖屏传 `vertical`。
+- 成功返回：`{code:0,msg:"ok",data:true}`。
+- 参数缺失、类型错误或值不在上述两项中：`{code:1001,msg:"参数无效",data:false}`。
+
+```js
+QSMH5APP.changeScreenmode({ mode: "horizontal" }, function (result) {
+  if (result.code === 0 && result.data === true) {
+    // 切屏命令已受理，或应用原本已是横屏。
   }
 });
 ```
@@ -465,10 +482,10 @@ QSMH5APP.off("onAccountTokenChanged", onAccountTokenChanged);
 本节仅记录 iOS 已实现边界，Android 前述行为不因此改变。当前工程及命令见 [iOS开发指南](ios/开发指南_development.md)。
 
 - 命名空间、异步 `Result`、`QSMH5APPReady` 保持一致，原生传输使用 WKWebView；仅配置中的可信主 frame 可调用，来源按协议、主机、端口精确匹配，并绑定文档、实例和会话代次。
-- `getGameInfo.deviceType` 在 iOS 为 `ios`；`packageCode` 从安装包 `.app/packCode/渠道目录名` 读取，未找到时为 `""`；详见第 8.2 节。隐私同意前设备码和 Token 为空；设备码使用应用内随机安装标识的 MD5 格式，具体后端业务兼容仍需后续设备联调。
+- `getGameInfo.deviceType` 在 iOS 为 `ios`；`packageCode` 从安装包 `.app/packCode/渠道目录名` 读取，未找到时为 `""`；`screenMode` 与原生/H5 请求的 `Screenmode` Header 使用同一当前方向。详见第 8.2 节。隐私同意前设备码和 Token 为空；设备码使用应用内随机安装标识的 MD5 格式，具体后端业务兼容仍需后续设备联调。
 - `agreePrivacyPolicy` / `rejectPrivacyPolicy` 仅当前隐私选择流程的 `web_agreement` 可调用，成功均回 `Result`、`data={}`。iOS 拒绝后显示原生隐私说明和重新选择入口，不调用退出进程。
 - `notifyLoginSuccess` 仅当前登录流程的 `web_login` 可调用；安全持久化成功并送达回调后才切游戏。写入失败返回 `9999`、`data=false`。
-- 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、changeGameUrl 及通用存储。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
+- 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、changeGameUrl、changeScreenmode 及通用存储。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
 - `requestPhoneLogin` 在关闭时返回 `3003`；开启但方案/SDK/宿主不可用时返回 `3001` 并保留/恢复 H5。展示成功只回一次 `code=0,data=true`，兑换成功由原生独立处理，不再次回调原请求。
 - 已支持 `setFloatingBall` 的显隐/激活、纵向拖动、点击福利窗口、福利覆盖后恢复，以及心跳 `floating_ball` 同步；心跳运营窗口清单 `popup_pages` 尚未接入。
 - 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理；`on/off` 在两端均为空实现，当前不发送预留事件。
@@ -497,7 +514,7 @@ QSMH5APP.revokePrivacyPolicy({}, function (result) {
 - 回调都接收 `{code, msg, data}`。先判断 `code === 0`，再读取 `data`；不要依赖 `msg` 的固定文本。
 - 两端均在注入后发送 `QSMH5APPReady`。页面先检查全局对象，尚未就绪再监听事件，避免错过已发出的事件。
 - H5 不应直接调用 `QSMNative.postMessage`、`window.webkit.messageHandlers` 或 `__QSMH5APP_CALLBACK__`；这些是各端内部传输协议，签名不同。
-- [公共 Promise/Axios 包装](示例/qsm-jsbridge.js) 可复用，无需按系统拆分；Header 的 `Devicetype`、`Packagecode` 必须取 `getGameInfo` 的实际返回值，不能写死 `android` 或渠道码。原生 Header 仅用于原生业务请求；H5 的 fetch/Axios 需自行设置，不会自动继承原生 Header。
+- [公共 Promise/Axios 包装](示例/qsm-jsbridge.js) 可复用，无需按系统拆分；Header 的 `Devicetype`、`Packagecode`、`Screenmode` 必须取 `getGameInfo` 的实际返回值，不能写死平台、渠道码或方向。原生 Header 仅用于原生业务请求；H5 的 fetch/Axios 需自行设置，不会自动继承原生 Header。
 
 ```js
 function initializeH5Bridge() {
@@ -520,7 +537,7 @@ else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
 - 安装后系统已解包 IPA，原生从主 Bundle 的父目录枚举同层 `.app`，不在沙盒中寻找原始 `.ipa` 或依赖字面量 `Payload` 路径。
 - 无目录、目录无法读取、路径实际是文件、只有普通文件等情况均返回空字符串，不报初始化失败，不阻塞登录、游戏等业务。不回退读取旧 Info.plist 渠道字段。
 - 不跟随符号链接；不限制渠道码的业务格式，但控制字符或纯空白名称不作为有效渠道。多个候选时按 `.app` 名称、渠道目录名称的升序选第一个有效目录，建议分包只保留一个渠道目录。
-- 启动时读取一次，`getGameInfo.data.packageCode` 和原生六项 Header 中的 `Packagecode` 使用同一 `GameIdentity` 值；隐私同意前也可返回非个人信息的渠道码。未分包母包两处均为 `""`，请求仍正常发送。
+- 启动时读取一次，`getGameInfo.data.packageCode` 和原生八项 Header 中的 `Packagecode` 使用同一 `GameIdentity` 值；隐私同意前也可返回非个人信息的渠道码。未分包母包两处均为 `""`，请求仍正常发送。
 - 仅给旧母包添加目录不会更新旧版原生代码；需要使用本次修复后重新构建的母包再次分包。分包后应检查最终签名和目录是否保留。
 
 ### 8.3 已支持方法及差异
@@ -537,6 +554,7 @@ else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
 | `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 本次对齐成功 `data=true`；只支持游戏阶段的 `web_game` / `web_welfare` | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
 | `closePage` | 关闭当前实例，成功 `data=true` | 本次对齐成功 `data=true`；仅游戏/福利实例，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
 | `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | 使用与配置同 origin 的 HTTPS URL 可共用；成功仅表示接受导航 |
+| `changeScreenmode` | 当前尚未实现 | 已实现横竖屏强制切换和幂等成功返回 | 当前仅 iOS 使用；参数只接受 `horizontal` / `vertical` |
 | `setFloatingBall` | 已实现，福利置顶临时隐藏 | 已实现，同显隐/激活及恢复规则 | 调用通用；传布尔 `show/active`，缺初始化配置时 `code=0,data=false` |
 | `saveGameRole` / `getGameRole` | 已实现 | 尚未实现，返回非零错误 | 当前按 `deviceType` 隐藏 iOS 相关入口或提供 H5 自身降级 |
 | `isAppInstalled` / `openApp` | 接受安卓包名，受系统可见性限制 | 尚未实现，返回非零错误 | 当前仅 Android 使用；不能把安卓包名直接用于 iOS |

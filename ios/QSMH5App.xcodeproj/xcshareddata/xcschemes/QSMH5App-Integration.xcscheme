@@ -14,7 +14,7 @@
             buildForArchiving = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "28E01024CA5190A812A34F34"
+               BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
                BuildableName = "QSMH5App.app"
                BlueprintName = "QSMH5App"
                ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -32,7 +32,7 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -55,7 +55,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">
@@ -71,7 +71,7 @@
       <BuildableProductRunnable>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "28E01024CA5190A812A34F34"
+            BlueprintIdentifier = "E498F3DA3B8DB026AD5B31CB"
             BuildableName = "QSMH5App.app"
             BlueprintName = "QSMH5App"
             ReferencedContainer = "container:QSMH5App.xcodeproj">

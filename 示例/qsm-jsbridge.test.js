@@ -51,7 +51,8 @@ async function run() {
       gameVersion: '1.0.1',
       accountToken: 'token-value',
       deviceType: 'android',
-      deviceCode: 'DEVICE'
+      deviceCode: 'DEVICE',
+      screenMode: 'horizontal'
     }
   });
 
@@ -62,7 +63,8 @@ async function run() {
     Packagecode: 'channel-a',
     Devicetype: 'android',
     Accountoken: 'token-value',
-    Gameversion: '1.0.1'
+    Gameversion: '1.0.1',
+    Screenmode: 'horizontal'
   });
 
   var thirdPartyConfig = { url: 'https://tracking.example/collect', headers: {} };

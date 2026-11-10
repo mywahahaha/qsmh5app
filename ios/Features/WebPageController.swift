@@ -1,6 +1,17 @@
 import UIKit
 import WebKit
 
+enum BridgeCallbackScript {
+    static func make(documentID: String, id: String, result: BridgeResult) -> String? {
+        guard let data = try? JSONSerialization.data(withJSONObject: [documentID, id, result.object]),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        // 只把 JSON 编码的值放进 JS；避免回调内容中的引号或脚本片段改变执行语义。
+        let safe = json.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+                       .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return "window.__QSMH5APP_CALLBACK__.apply(window, \(safe));"
+    }
+}
+
 private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     weak var owner: WebPageController?
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -25,6 +36,10 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     private var failureView: UIView?
     private let script: String
     private let handler = WeakMessageHandler()
+    var onContentReady: (() -> Void)?
+    var onTerminalFailure: (() -> Void)?
+    private var revealed = false
+    private var awaitingInitialPolicy = false
 
     init(spec: PageSpec, coordinator: AppCoordinator) throws {
         self.spec = spec; self.instance = spec.instance; self.trustedURL = spec.url
@@ -42,8 +57,18 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self; webView.uiDelegate = self
         webView.isOpaque = false; webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        if #available(iOS 15.0, *) { webView.underPageBackgroundColor = .clear }
+        let scroll = webView.scrollView
+        scroll.isScrollEnabled = false; scroll.bounces = false
+        scroll.alwaysBounceHorizontal = false; scroll.alwaysBounceVertical = false
+        scroll.showsHorizontalScrollIndicator = false; scroll.showsVerticalScrollIndicator = false
+        scroll.contentInsetAdjustmentBehavior = .never; scroll.contentInset = .zero; scroll.scrollIndicatorInsets = .zero
+        scroll.automaticallyAdjustsScrollIndicatorInsets = false; scroll.scrollsToTop = false
+        scroll.pinchGestureRecognizer?.isEnabled = false
+        webView.allowsBackForwardNavigationGestures = false; webView.allowsLinkPreview = false
         webView.accessibilityIdentifier = instance
-        view = UIView(); view.backgroundColor = .systemBackground; view.clipsToBounds = true
+        view = UIView(); view.backgroundColor = .clear; view.clipsToBounds = true
         webView.frame = view.bounds; webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]; view.addSubview(webView)
         navigate(spec.url)
     }
@@ -59,14 +84,47 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     private func loadCurrent() {
         guard active else { return }
         failureView?.removeFromSuperview(); failureView = nil; webView.isHidden = false
+        prepareDocument(); awaitingInitialPolicy = true
         navigation = webView.load(currentRequest)
     }
     private func prepareDocument() {
-        documentID = UUID().uuidString; seenIDs.removeAll()
+        documentID = UUID().uuidString; seenIDs.removeAll(); hideUntilReady()
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
+        let viewport = """
+        (function(){
+          function apply(){
+            if(!document.head)return;
+            var m=document.querySelector('meta[name="viewport"]');
+            if(!m){m=document.createElement('meta');m.name='viewport';m.content='width=device-width,initial-scale=1';document.head.appendChild(m);}
+            var v=(m.content||'').split(',').filter(function(s){return !/^\\s*viewport-fit\\s*=/i.test(s);});
+            v.push('viewport-fit=cover');m.content=v.join(',');
+            var style=document.createElement('style');style.textContent='html,body{overscroll-behavior:none}*{-webkit-user-drag:none}*::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}';document.head.appendChild(style);
+          }
+          if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply,{once:true});else apply();
+          document.addEventListener('dragstart',function(e){e.preventDefault();},true);
+        })();
+        """
+        controller.addUserScript(WKUserScript(source: viewport, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         controller.addUserScript(WKUserScript(source: script.replacingOccurrences(of: "__QSM_DOCUMENT_ID__", with: documentID),
                                              injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        let ready = """
+        requestAnimationFrame(function(){requestAnimationFrame(function(){
+          window.webkit.messageHandlers.qsm.postMessage(JSON.stringify({documentID:"\(documentID)",id:"native-ready",method:"__qsm_render_ready"}));
+        });});
+        """
+        controller.addUserScript(WKUserScript(source: ready, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+    }
+    private func hideUntilReady() {
+        revealed = false; webView.layer.removeAllAnimations(); webView.alpha = 0.001; webView.isUserInteractionEnabled = false
+    }
+    private func reveal() {
+        guard active, !revealed else { return }
+        revealed = true; timeout?.cancel(); attempts = 0
+        failureView?.removeFromSuperview(); failureView = nil; webView.isHidden = false
+        webView.isUserInteractionEnabled = true
+        UIView.animate(withDuration: 0.2) { self.webView.alpha = 1 }
+        onContentReady?(); notifyGameVisible()
     }
     func invalidate() {
         guard active else { return }
@@ -90,6 +148,7 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         guard security.protocol.lowercased() == Origin(trustedURL)?.scheme,
               security.host.lowercased() == Origin(trustedURL)?.host,
               (security.port == 0 ? (security.protocol == "https" ? 443 : 80) : security.port) == Origin(trustedURL)?.port else { return }
+        if method == "__qsm_render_ready" { reveal(); return }
         seenIDs.insert(id)
         let stamp = documentID
         let context = BridgeContext(instance: instance, epoch: sessionEpoch) { [weak self] in
@@ -99,9 +158,8 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
             guard let self = self, let coordinator = coordinator else { return }
             await coordinator.handle(method: method, args: object["args"] ?? NSNull(), context: context) { [weak self] result in
                 guard let self = self, self.active, self.documentID == stamp else { return }
-                _ = try? await self.webView.callAsyncJavaScript(
-                    "return window.__QSMH5APP_CALLBACK__(documentID, id, result);",
-                    arguments: ["documentID": stamp, "id": id, "result": result.object], in: nil, contentWorld: .page)
+                guard let script = BridgeCallbackScript.make(documentID: stamp, id: id, result: result) else { return }
+                self.webView.evaluateJavaScript(script, completionHandler: nil)
             }
         }
     }
@@ -120,7 +178,7 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
             return
         }
         currentRequest = action.request
-        prepareDocument()
+        if awaitingInitialPolicy { awaitingInitialPolicy = false } else { prepareDocument() }
         decisionHandler(.allow)
     }
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -146,12 +204,12 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     }
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard active, navigation === self.navigation else { return }
-        notifyGameVisible()
+        // didCommit 只代表开始接收内容；等待文档就绪后的帧通知。
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard active, navigation === self.navigation else { return }
         timeout?.cancel(); attempts = 0; failureView?.removeFromSuperview(); failureView = nil; webView.isHidden = false
-        notifyGameVisible()
+        reveal() // 脚本被页面限制时的兜底；不等待游戏全部资源。
     }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { fail(navigation, error) }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { fail(navigation, error) }
@@ -168,8 +226,8 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         if retryable, (currentRequest.httpMethod ?? "GET") == "GET", attempts < 3 {
             attempts += 1; loadCurrent(); return
         }
-        webView.isHidden = true
-        let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 18; stack.alignment = .center
+        webView.isHidden = true; onTerminalFailure?()
+        let stack = UIStackView(); stack.backgroundColor = .systemBackground; stack.axis = .vertical; stack.spacing = 18; stack.alignment = .center
         let label = UILabel(); label.text = "页面暂时无法加载\n\(message)"; label.numberOfLines = 0; label.textAlignment = .center
         label.accessibilityIdentifier = "web.error"
         let retry = UIButton(type: .system); retry.setTitle("重试页面", for: .normal)

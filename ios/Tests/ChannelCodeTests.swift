@@ -1,6 +1,19 @@
 import XCTest
 @testable import QSMH5App
 
+private final class BundleOnlyFileManager: FileManager, @unchecked Sendable {
+    var readableDirectory: URL!
+    var enumerated: [URL] = []
+    override func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                                     options mask: FileManager.DirectoryEnumerationOptions = []) throws -> [URL] {
+        enumerated.append(url)
+        guard url.standardizedFileURL == readableDirectory.standardizedFileURL else {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
+}
+
 final class ChannelCodeTests: XCTestCase {
     private var payload: URL!
     override func setUpWithError() throws {
@@ -65,12 +78,29 @@ final class ChannelCodeTests: XCTestCase {
         try directory("Game.app/packCode/bad\nchannel")
         XCTAssertEqual(ChannelCodeReader.read(payloadDirectory: payload), "")
     }
+    func testInstalledBundleReadsChannelWhenParentCannotBeEnumerated() throws {
+        let app = try directory("InstalledGame.app")
+        let info: [String: Any] = ["CFBundleIdentifier": "test.installed.channel", "CFBundlePackageType": "APPL"]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: app.appendingPathComponent("Info.plist"))
+        let bundle = try XCTUnwrap(Bundle(url: app))
+        let fileManager = BundleOnlyFileManager()
+        fileManager.readableDirectory = app.appendingPathComponent("packCode")
+        // 未分包时依然为空；不访问应用外部，也不创建目录。
+        XCTAssertEqual(ChannelCodeReader.read(bundle: bundle, fileManager: fileManager), "")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileManager.readableDirectory.path))
+        try directory("InstalledGame.app/packCode/1-218")
+        XCTAssertThrowsError(try fileManager.contentsOfDirectory(at: payload, includingPropertiesForKeys: nil))
+        fileManager.enumerated = []
+        XCTAssertEqual(ChannelCodeReader.read(bundle: bundle, fileManager: fileManager), "1-218")
+        XCTAssertEqual(fileManager.enumerated.map(\.standardizedFileURL), [fileManager.readableDirectory.standardizedFileURL])
+    }
     func testRuntimeIgnoresLegacyPlistValueAndUsesChannelDirectory() throws {
         let app = try directory("Game.app")
         let info: [String: Any] = ["CFBundleIdentifier": "test.channel", "CFBundlePackageType": "APPL",
             "QSMPackageCode": "stale-plist-code", "QSMGameID": "29", "CFBundleShortVersionString": "1.0.1"]
         try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0).write(to: app.appendingPathComponent("Info.plist"))
         let bundle = try XCTUnwrap(Bundle(url: app))
+        try directory("A-Sibling.app/packCode/wrong-channel")
         XCTAssertEqual(try RuntimeConfiguration.load(bundle: bundle).identity.packageCode, "")
         try directory("Game.app/packCode/1-218")
         XCTAssertEqual(try RuntimeConfiguration.load(bundle: bundle).identity.packageCode, "1-218")

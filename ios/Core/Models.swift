@@ -101,17 +101,84 @@ struct AuthConfiguration {
     static let disabled = AuthConfiguration(enabled: false, secret: nil, exchangeURL: nil, timeout: 5, raw: [:])
 }
 
+struct UpdateOffer {
+    let title: String
+    let detail: String
+    let version: String
+    let time: String
+    let url: URL
+    let force: Bool
+    let width: UpdateDimension
+    let height: UpdateDimension?
+}
+
+enum UpdateDimension: Equatable {
+    case points(Double)
+    case percent(Double)
+
+    func resolve(in total: CGFloat) -> CGFloat {
+        switch self {
+        case .points(let value): return CGFloat(value)
+        case .percent(let value): return total * CGFloat(value)
+        }
+    }
+}
+
+enum UpdatePolicy {
+    static func offer(_ value: Any?) -> UpdateOffer? {
+        guard let raw = value as? [String: Any], JSON.integer(raw["open"]) == 1 else { return nil }
+        func flag(_ name: String) -> Bool? {
+            guard let value = JSON.integer(raw[name]), value == 0 || value == 1 else { return nil }
+            return value == 1
+        }
+        func dimension(_ value: Any?) -> UpdateDimension? {
+            if let n = value as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() {
+                let points = n.doubleValue
+                guard points.isFinite, points > 0 else { return nil }
+                return .points(points)
+            }
+            guard let raw = value as? String else { return nil }
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.hasSuffix("%") {
+                guard let number = Double(text.dropLast()), number.isFinite, number > 0, number <= 100 else { return nil }
+                return .percent(number / 100)
+            }
+            guard let points = Double(text), points.isFinite, points > 0 else { return nil }
+            return .points(points)
+        }
+        guard let force = flag("force"), (raw["popup"] == nil || flag("popup") != nil), let width = dimension(raw["width"]),
+              let title = raw["title"] as? String, let detail = raw["desc"] as? String,
+              let version = raw["version"] as? String, let time = raw["time"] as? String,
+              let urlText = raw["url"] as? String,
+              let url = URL(string: urlText.trimmingCharacters(in: .whitespacesAndNewlines)),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+              url.user == nil, url.password == nil,
+              url.pathExtension.lowercased() != "apk" else { return nil }
+        let height: UpdateDimension?
+        if let rawHeight = raw["height"] as? String,
+           rawHeight.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "auto" {
+            height = nil
+        } else {
+            guard let parsed = dimension(raw["height"]) else { return nil }
+            height = parsed
+        }
+        return UpdateOffer(title: title, detail: detail, version: version, time: time, url: url,
+                           force: force, width: width, height: height)
+    }
+}
+
 struct InitConfiguration {
     let privacyAuto: Bool
+    let backgroundURL: URL?
     let pages: [String: PageSpec]
     let jumpHosts: Set<String>
     let auth: AuthConfiguration
-    let updateEnabled: Bool
+    let updateOffer: UpdateOffer?
     let floatingBall: FloatingBallConfiguration?
     let popupInterval: FloatingBallPollingConfiguration?
-    init(privacyAuto: Bool, pages: [String: PageSpec], jumpHosts: Set<String>, auth: AuthConfiguration, updateEnabled: Bool,
+    init(privacyAuto: Bool, backgroundURL: URL? = nil, pages: [String: PageSpec], jumpHosts: Set<String>, auth: AuthConfiguration, updateOffer: UpdateOffer?,
          floatingBall: FloatingBallConfiguration? = nil, popupInterval: FloatingBallPollingConfiguration? = nil) {
-        self.privacyAuto = privacyAuto; self.pages = pages; self.jumpHosts = jumpHosts; self.auth = auth; self.updateEnabled = updateEnabled
+        self.backgroundURL = backgroundURL; self.privacyAuto = privacyAuto; self.pages = pages; self.jumpHosts = jumpHosts; self.auth = auth; self.updateOffer = updateOffer
         self.floatingBall = floatingBall; self.popupInterval = popupInterval
     }
     static func parse(_ data: Data, policy: URLPolicy) throws -> InitConfiguration {
@@ -158,8 +225,10 @@ struct InitConfiguration {
             auth = AuthConfiguration(enabled: true, secret: secret, exchangeURL: exchange,
                                      timeout: Double(min(max(millis, 1000), 30000)) / 1000, raw: config)
         }
-        return InitConfiguration(privacyAuto: privacy, pages: pages, jumpHosts: jumps, auth: auth,
-                                 updateEnabled: JSON.integer((body["updateInfo"] as? [String: Any])?["open"]) == 1,
+        let backgroundText = (body["bgImage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let backgroundURL = backgroundText.isEmpty ? nil : URL(string: backgroundText).flatMap { policy.allows($0) ? $0 : nil }
+        return InitConfiguration(privacyAuto: privacy, backgroundURL: backgroundURL, pages: pages, jumpHosts: jumps, auth: auth,
+                                 updateOffer: UpdatePolicy.offer(body["updateInfo"]),
                                  floatingBall: try body["floatball"].map { try FloatingBallConfiguration.parse($0, policy: policy) },
                                  popupInterval: FloatingBallPollingConfiguration.parse(body["popupInterval"], policy: policy))
     }
@@ -176,13 +245,20 @@ struct URLPolicy {
     }
 }
 
+enum ScreenMode: String, Equatable {
+    case horizontal
+    case vertical
+}
+
 struct GameIdentity {
     let gameID: Int
     let version: String
     let packageCode: String
-    func headers(consented: Bool, deviceCode: String, token: String) -> [String: String] {
+    func headers(consented: Bool, deviceCode: String, token: String, notchScreen: Bool = false,
+                 screenMode: ScreenMode = .vertical) -> [String: String] {
         ["Gameid": String(gameID), "Gameversion": version, "Packagecode": packageCode,
-         "Devicetype": "ios", "Devicecode": consented ? deviceCode : "", "Accountoken": consented ? token : ""]
+         "Devicetype": "ios", "Devicecode": consented ? deviceCode : "", "Accountoken": consented ? token : "",
+         "Notchscreen": notchScreen ? "1" : "0", "Screenmode": screenMode.rawValue]
     }
 }
 

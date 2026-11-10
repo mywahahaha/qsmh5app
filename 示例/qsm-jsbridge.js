@@ -74,6 +74,9 @@
         setHeader(headers, 'Devicetype', gameInfo && gameInfo.deviceType);
         setHeader(headers, 'Accountoken', gameInfo && gameInfo.accountToken);
         setHeader(headers, 'Gameversion', gameInfo && gameInfo.gameVersion);
+        if (gameInfo && (gameInfo.screenMode === 'horizontal' || gameInfo.screenMode === 'vertical')) {
+          setHeader(headers, 'Screenmode', gameInfo.screenMode);
+        }
         return config;
       });
     });
@@ -91,6 +94,9 @@
     },
     getAccountToken: function () {
       return callNativeBridge('getAccountToken', {});
+    },
+    changeScreenmode: function (mode) {
+      return callNativeBridge('changeScreenmode', { mode: mode });
     },
     isAppInstalled: function (packageName) {
       return callNativeBridge('isAppInstalled', { packageName: packageName });

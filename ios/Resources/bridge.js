@@ -33,7 +33,7 @@
   }
   var bridge = {};
   ['agreePrivacyPolicy','rejectPrivacyPolicy','revokePrivacyPolicy','requestPhoneLogin','notifyLoginSuccess',
-   'getAccountToken','getGameInfo','logout','openMiniWindow','closeMiniWindow','changeGameUrl','closePage',
+   'getAccountToken','getGameInfo','logout','openMiniWindow','closeMiniWindow','changeGameUrl','changeScreenmode','closePage',
    'saveLocalStorage','getLocalStorage','saveGameRole','getGameRole','setFloatingBall','isAppInstalled','openApp']
     .forEach(function (method) { bridge[method] = function (args, callback) { invoke(method, args, callback); }; });
   bridge.on = function () {};

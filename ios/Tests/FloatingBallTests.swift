@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import ImageIO
 @testable import QSMH5App
 
 @MainActor final class FloatingBallTests: XCTestCase {
@@ -130,6 +131,34 @@ import UIKit
         XCTAssertNil(layer.hitTest(CGPoint(x: 1, y: 700), with: nil))
         ball.destroy()
     }
+    func testAnimatedGIFDecodesAllFrames() throws {
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "com.compuserve.gif" as CFString, 2, nil))
+        CGImageDestinationSetProperties(destination, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
+        for color in [UIColor.red, UIColor.blue] {
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
+                color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+            }
+            CGImageDestinationAddImage(destination, try XCTUnwrap(image.cgImage),
+                                       [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: 0.1]] as CFDictionary)
+        }
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let animated = try XCTUnwrap(FloatingBallView.decodeImage(data as Data))
+        XCTAssertEqual(animated.images?.count, 2)
+        XCTAssertEqual(animated.duration, 0.2, accuracy: 0.01)
+    }
+    func testScreenAwakeOnlyForFrontGame() async {
+        let sut = make(); await sut.start(); XCTAssertFalse(sut.keepScreenAwake)
+        await login(sut); XCTAssertTrue(sut.keepScreenAwake)
+        sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake) // 球尚未加载，福利页没有打开
+        sut.gameDocumentBecameVisible(context: context(sut))
+        sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake)
+        _ = await call(sut, "closeMiniWindow", ["page": "web_welfare"], instance: "web_welfare")
+        XCTAssertTrue(sut.keepScreenAwake)
+        sut.enteredBackground(); XCTAssertFalse(sut.keepScreenAwake)
+        sut.enteredForeground(); XCTAssertTrue(sut.keepScreenAwake)
+        _ = await call(sut, "closePage"); XCTAssertFalse(sut.keepScreenAwake)
+    }
     func testPollingConfigurationAndMalformedResponsesDoNotChangeState() throws {
         XCTAssertNil(FloatingBallPollingConfiguration.parse(["url": "https://fixture.test/poll", "interval": 0], policy: policy))
         XCTAssertNil(FloatingBallPollingConfiguration.parse(["url": "http://fixture.test/poll", "interval": 30], policy: policy))
@@ -138,7 +167,7 @@ import UIKit
         }
         XCTAssertThrowsError(try FloatingBallPollingConfiguration.state(from: Data("{\"code\":1}".utf8)))
     }
-    func testHeartbeatRequestUsesPOSTEmptyBodyAndSameSixHeaders() async throws {
+    func testHeartbeatRequestUsesPOSTEmptyBodyAndSameHeaders() async throws {
         let identity = GameIdentity(gameID: 29, version: "1.0.1", packageCode: "1-218")
         let headers = identity.headers(consented: true, deviceCode: "device", token: "token")
         let api = APIClient(baseURL: URL(string: "https://fixture.test")!, policy: policy, transport: CapturingTransport { request in

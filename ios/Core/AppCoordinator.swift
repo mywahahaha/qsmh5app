@@ -15,12 +15,14 @@ import Foundation
 }
 
 enum ScreenState: Equatable {
-    case loading(String), failure(String), privacyDenied, revoked(String), closed
+    case loading(String), waitingForNetwork, failure(String), privacyDenied, revoked(String), closed
 }
 
 enum ViewEvent {
     case status(ScreenState), show(PageSpec, navigate: Bool = false), remove(String), removeAll
     case floatingBall(FloatingBallPresentation)
+    case background(URL?), dismissSplash, initializationPending(Bool)
+    case update(UpdateOffer), dismissUpdate
 }
 
 struct BridgeContext {
@@ -31,7 +33,7 @@ struct BridgeContext {
 
 @MainActor final class AppCoordinator {
     typealias Reply = @MainActor (BridgeResult) async -> Void
-    enum Phase { case initializing, privacy, authenticating, login, game, revoked, closed, failed }
+    enum Phase { case initializing, privacy, updating, authenticating, login, game, revoked, closed, failed }
     let identity: GameIdentity
     let policy: URLPolicy
     private let backend: Backend
@@ -40,6 +42,9 @@ struct BridgeContext {
     let gateway: AuthGateway
     private let clearWebData: @MainActor () async -> Void
     private let initialGameURL: URL?
+    private let notchScreen: @MainActor () -> Bool
+    private let screenModeProvider: @MainActor () -> ScreenMode
+    private let changeScreenMode: @MainActor (ScreenMode) -> Void
     var onView: ((ViewEvent) -> Void)?
     var confirmRevocation: (@MainActor () async -> Bool)?
     private(set) var epoch: UInt64 = 0
@@ -48,8 +53,11 @@ struct BridgeContext {
     private(set) var token = ""
     private(set) var configuration: InitConfiguration?
     private var authID: UUID?
+    private var initializationTask: Task<Data, Error>?
+    private let initializationPause: @MainActor (TimeInterval) async throws -> Void
     private var authTask: Task<Void, Never>?
     private var resumeToLogin = false
+    private var updateChecked = false
     private var revocationActive = false
     private var loginCommitActive = false
     private var floatingBallController: FloatingBallController?
@@ -58,18 +66,31 @@ struct BridgeContext {
     private var windowStack: [String] = []
     private var foreground = true
     var floatingBallState: FloatingBallState { floatingBallController?.state ?? .hidden }
+    var keepScreenAwake: Bool { foreground && phase == .game && windowStack.contains("web_game") }
+    private var notchScreenValue: Int { notchScreen() ? 1 : 0 }
+    private var screenMode: ScreenMode { screenModeProvider() }
 
     init(identity: GameIdentity, policy: URLPolicy, backend: Backend, repository: StateRepository,
-         vault: TokenVault, gateway: AuthGateway, initialGameURL: URL? = nil, clearWebData: @escaping @MainActor () async -> Void = {}) {
+         vault: TokenVault, gateway: AuthGateway, initialGameURL: URL? = nil,
+         notchScreen: @escaping @MainActor () -> Bool = { false },
+         screenMode: @escaping @MainActor () -> ScreenMode = { .vertical },
+         changeScreenMode: @escaping @MainActor (ScreenMode) -> Void = { _ in },
+         initializationPause: @escaping @MainActor (TimeInterval) async throws -> Void = { seconds in
+             try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+         }, clearWebData: @escaping @MainActor () async -> Void = {}) {
         self.identity = identity; self.policy = policy; self.backend = backend
         self.repository = repository; self.vault = vault; self.gateway = gateway; self.clearWebData = clearWebData
-        self.initialGameURL = initialGameURL
+        self.initialGameURL = initialGameURL; self.notchScreen = notchScreen
+        self.screenModeProvider = screenMode; self.changeScreenMode = changeScreenMode
+        self.initializationPause = initializationPause
     }
     var headers: [String: String] {
-        identity.headers(consented: stored.consent == .agreed && !stored.cleanupPending, deviceCode: stored.deviceCode, token: token)
+        identity.headers(consented: stored.consent == .agreed && !stored.cleanupPending, deviceCode: stored.deviceCode, token: token,
+                         notchScreen: notchScreenValue == 1, screenMode: screenMode)
     }
     private func save(_ state: StoredState) throws { try repository.save(state); stored = state }
     private func invalidate() {
+        initializationTask?.cancel(); initializationTask = nil
         epoch &+= 1; authID = nil; authTask?.cancel(); authTask = nil; gateway.cancel()
         floatingBallHeartbeat?.stop(); floatingBallController?.resetSession(); gamePageReady = false
         windowStack.removeAll(); refreshFloatingBall()
@@ -77,6 +98,9 @@ struct BridgeContext {
     func start() async {
         guard !revocationActive else { return }
         invalidate(); let stamp = epoch
+        updateChecked = false; onView?(.dismissUpdate)
+        onView?(.initializationPending(true))
+        onView?(.background(nil))
         resumeToLogin = false; configuration = nil; token = ""; phase = .initializing
         removeAllPages(); onView?(.status(.loading("正在初始化游戏…")))
         do {
@@ -92,10 +116,12 @@ struct BridgeContext {
                 return
             }
             if stored.consent == .agreed { token = try vault.read() ?? "" }
-            let data = try await backend.initialize(headers: headers)
+            let data = try await loadInitialization(stamp: stamp)
             guard epoch == stamp, !Task.isCancelled else { return }
             let config = try parsedConfiguration(data)
             configuration = config
+            onView?(.initializationPending(false))
+            onView?(.background(config.backgroundURL))
             configureFloatingBall()
             if stored.consent != .agreed && config.privacyAuto {
                 phase = .privacy; show("web_agreement")
@@ -104,9 +130,35 @@ struct BridgeContext {
                 await beginLogin(stamp: stamp)
             }
         } catch {
-            guard epoch == stamp else { return }
+            guard epoch == stamp, !Task.isCancelled, !(error is CancellationError) else { return }
+            onView?(.initializationPending(false))
             phase = .failed; onView?(.status(.failure("游戏初始化失败：\(error.localizedDescription)")))
         }
+    }
+    func initializationWaitingForConnectivity() {
+        guard phase == .initializing else { return }
+        onView?(.status(.waitingForNetwork))
+    }
+    private func loadInitialization(stamp: UInt64) async throws -> Data {
+        let request = Task { @MainActor () throws -> Data in
+            var attempt = 0
+            while self.epoch == stamp {
+                try Task.checkCancellation()
+                do { return try await self.backend.initialize(headers: self.headers) }
+                catch {
+                    try Task.checkCancellation()
+                    guard self.epoch == stamp else { throw CancellationError() }
+                    guard StartupConnectivity.shouldWait(for: error) else { throw error }
+                    self.initializationWaitingForConnectivity()
+                    attempt += 1
+                    try await self.initializationPause(StartupConnectivity.retryDelay(attempt: attempt))
+                }
+            }
+            throw CancellationError()
+        }
+        initializationTask = request
+        defer { if epoch == stamp { initializationTask = nil } }
+        return try await withTaskCancellationHandler(operation: { try await request.value }, onCancel: { request.cancel() })
     }
     private func agree() throws {
         var state = stored; state.consent = .agreed; state.cleanupPending = false
@@ -120,9 +172,10 @@ struct BridgeContext {
             invalidate(); let stamp = epoch
             phase = .initializing; onView?(.status(.loading("正在加载隐私协议…")))
             do {
-                let data = try await backend.initialize(headers: headers)
+                let data = try await loadInitialization(stamp: stamp)
                 guard stamp == epoch else { return }
                 configuration = try parsedConfiguration(data)
+                onView?(.background(configuration?.backgroundURL))
                 configureFloatingBall()
                 phase = .privacy; show("web_agreement")
             } catch {
@@ -139,16 +192,17 @@ struct BridgeContext {
         }
         var pages = config.pages
         pages["web_game"] = PageSpec(instance: game.instance, url: url, width: game.width, height: game.height, left: game.left, top: game.top)
-        return InitConfiguration(privacyAuto: config.privacyAuto, pages: pages, jumpHosts: config.jumpHosts,
-                                 auth: config.auth, updateEnabled: config.updateEnabled,
+        return InitConfiguration(privacyAuto: config.privacyAuto, backgroundURL: config.backgroundURL, pages: pages, jumpHosts: config.jumpHosts,
+                                 auth: config.auth, updateOffer: config.updateOffer,
                                  floatingBall: config.floatingBall, popupInterval: config.popupInterval)
     }
     private func beginLogin(stamp: UInt64, useSavedToken: Bool = true) async {
         guard epoch == stamp, stored.consent == .agreed else { return }
-        if configuration?.updateEnabled == true {
-            phase = .failed
-            onView?(.status(.failure("当前阶段尚未接入原生更新，请使用关闭更新的联调配置。")))
-            return
+        if !updateChecked {
+            updateChecked = true
+            if let offer = configuration?.updateOffer {
+                phase = .updating; onView?(.dismissSplash); onView?(.update(offer)); return
+            }
         }
         phase = .authenticating
         if useSavedToken, !token.isEmpty {
@@ -168,6 +222,14 @@ struct BridgeContext {
         }
         showLogin()
         if configuration?.auth.enabled == true, gateway.available { await performOnekey(reply: nil) }
+    }
+    func finishUpdate(error: Bool = false) {
+        guard phase == .updating else { return }
+        phase = .authenticating
+        onView?(.dismissUpdate)
+        if error { onView?(.status(.loading("暂时无法打开更新，请稍后再试"))) }
+        let stamp = epoch
+        Task { await beginLogin(stamp: stamp) }
     }
     private func show(_ instance: String) {
         guard let page = configuration?.pages[instance] else { return }
@@ -241,6 +303,7 @@ struct BridgeContext {
         guard stored.consent == .agreed, authID == nil, let _ = auth.secret, let exchangeURL = auth.exchangeURL else {
             await reply?(.failure(3001, "认证配置不可用或已有认证流程")); return
         }
+        onView?(.dismissSplash)
         let id = UUID(), stamp = epoch
         authID = id; var didPresent = false
         defer { if authID == id { authID = nil } }
@@ -267,14 +330,15 @@ struct BridgeContext {
     func handle(method: String, args: Any, context: BridgeContext, reply: @escaping Reply) async {
         guard context.epoch == epoch, context.isCurrent(), !stored.cleanupPending, !revocationActive else { return }
         let object = args as? [String: Any]
-        let falseMethods: Set<String> = ["notifyLoginSuccess", "logout", "changeGameUrl", "saveLocalStorage", "revokePrivacyPolicy", "setFloatingBall"]
+        let falseMethods: Set<String> = ["notifyLoginSuccess", "logout", "changeGameUrl", "changeScreenmode", "saveLocalStorage", "revokePrivacyPolicy", "setFloatingBall"]
         func bad() -> BridgeResult { .failure(1001, "参数或当前页面状态无效", data: method == "getLocalStorage" ? "" : (falseMethods.contains(method) ? false : NSNull())) }
-        if method != "saveLocalStorage", object == nil { await reply(bad()); return }
+        if method != "saveLocalStorage", method != "changeScreenmode", object == nil { await reply(bad()); return }
         do {
             switch method {
             case "getGameInfo":
                 await reply(.ok(["gameId": identity.gameID, "gameVersion": identity.version, "packageCode": identity.packageCode,
-                                 "deviceType": "ios", "deviceCode": stored.deviceCode, "accountToken": stored.consent == .agreed ? token : ""]))
+                                 "deviceType": "ios", "deviceCode": stored.deviceCode, "accountToken": stored.consent == .agreed ? token : "",
+                                 "notchScreen": notchScreenValue, "screenMode": screenMode.rawValue]))
             case "getAccountToken": await reply(.ok(["accountToken": stored.consent == .agreed ? token : ""]))
             case "agreePrivacyPolicy":
                 guard phase == .privacy, context.instance == "web_agreement" else { await reply(bad()); return }
@@ -330,6 +394,12 @@ struct BridgeContext {
                 await reply(.ok(true))
                 guard context.epoch == epoch, context.isCurrent() else { return }
                 presentPage(PageSpec(instance: game.instance, url: url, width: game.width, height: game.height, left: game.left, top: game.top), navigate: true)
+            case "changeScreenmode":
+                guard let value = object?["mode"] as? String, let mode = ScreenMode(rawValue: value) else {
+                    await reply(.failure(1001, "参数无效", data: false)); return
+                }
+                if screenMode != mode { changeScreenMode(mode) }
+                await reply(.ok(true))
             case "saveLocalStorage":
                 let items: [[String: Any]]
                 if let array = args as? [Any] {
@@ -376,6 +446,7 @@ struct BridgeContext {
         await finishCleanup(reply: nil)
     }
     private func finishCleanup(reply: Reply?) async {
+        onView?(.background(nil))
         do {
             var pending = stored; pending.consent = .revoked; pending.cleanupPending = true
             try save(pending); try vault.write(nil); token = ""

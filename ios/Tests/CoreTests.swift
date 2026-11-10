@@ -25,11 +25,12 @@ import XCTest
 @MainActor final class StubBackend: Backend {
     var response: Data
     var requests: [[String: String]] = []
+    var initializeHandler: (() async throws -> Data)?
     var loginHandler: (() async throws -> String)?
     var exchangeHandler: (() async throws -> String)?
     var heartbeatHandler: (() async throws -> Data)?
     init(_ response: Data) { self.response = response }
-    func initialize(headers: [String: String]) async throws -> Data { requests.append(headers); return response }
+    func initialize(headers: [String: String]) async throws -> Data { requests.append(headers); return try await initializeHandler?() ?? response }
     func login(token: String, headers: [String: String]) async throws -> String {
         requests.append(headers); return try await loginHandler?() ?? "renewed-token"
     }
@@ -59,6 +60,20 @@ struct CapturingTransport: HTTPTransport {
 @MainActor final class CoreTests: XCTestCase {
     let policy = URLPolicy(localOrigin: nil)
     let identity = GameIdentity(gameID: 29, version: "1.0.1", packageCode: "")
+    func testIOS14BridgeCallbackSerializesUntrustedTextAsData() throws {
+        let hostile = "\");globalThis.injected=true;//\u{2028}中文\u{2029}"
+        let script = try XCTUnwrap(BridgeCallbackScript.make(documentID: "document", id: "42",
+            result: .ok(["text": hostile])))
+        let prefix = "window.__QSMH5APP_CALLBACK__.apply(window, "
+        XCTAssertTrue(script.hasPrefix(prefix)); XCTAssertTrue(script.hasSuffix(");"))
+        XCTAssertFalse(script.contains("\u{2028}")); XCTAssertFalse(script.contains("\u{2029}"))
+        let json = String(script.dropFirst(prefix.count).dropLast(2))
+        let arguments = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [Any])
+        XCTAssertEqual(arguments[0] as? String, "document")
+        XCTAssertEqual(arguments[1] as? String, "42")
+        let response = try XCTUnwrap(arguments[2] as? [String: Any])
+        XCTAssertEqual((response["data"] as? [String: Any])?["text"] as? String, hostile)
+    }
     func fixture(privacy: Bool = true, auth: Bool = false) -> Data {
         let pages = Dictionary(uniqueKeysWithValues: ["agreement", "login", "game", "welfare"].map { name in
             (name, ["instance": "web_" + name, "url": "https://fixture.test/" + name, "width": "100%", "height": "100%", "left": "center", "top": "center"] as [String: Any])
@@ -99,6 +114,80 @@ struct CapturingTransport: HTTPTransport {
         let parsed = try InitConfiguration.parse(fixture(), policy: policy)
         XCTAssertFalse(parsed.auth.enabled); XCTAssertEqual(parsed.pages.count, 4)
     }
+    func testUpdatePolicyRejectsInvalidEntrance() throws {
+        var raw: [String: Any] = ["open":1,"width":"80%","height":"auto","force":1,
+            "title":"新版本","desc":"说明","version":"1.0.2","time":"今天","url":"https://fixture.test/update"]
+        XCTAssertTrue(try XCTUnwrap(UpdatePolicy.offer(raw)).force)
+        raw["url"] = "https://fixture.test/app.apk"; XCTAssertNil(UpdatePolicy.offer(raw))
+        raw["url"] = "http://fixture.test/update"; XCTAssertNotNil(UpdatePolicy.offer(raw))
+        raw["url"] = "https://fixture.test/update"; raw["width"] = "NaN"; XCTAssertNil(UpdatePolicy.offer(raw))
+        raw["open"] = 0; XCTAssertNil(UpdatePolicy.offer(raw))
+    }
+    func testOnlineUpdateConfigWithHTTPEntryProducesOffer() throws {
+        let raw: [String: Any] = ["open": 1, "width": "50", "height": "auto", "popup": 1,
+            "force": 0, "title": "邀请您体验新版本", "time": " 2026-11-05", "desc": "游戏有更新啦!",
+            "version": "", "url": "http://t469.g.22.run/box29"]
+        let offer = try XCTUnwrap(UpdatePolicy.offer(raw))
+        XCTAssertEqual(offer.url.absoluteString, "http://t469.g.22.run/box29")
+        if case .points(let width) = offer.width { XCTAssertEqual(width, 50) } else { XCTFail("纯数字宽度应按 dp 解析") }
+        XCTAssertNil(offer.height)
+        XCTAssertTrue(UpdatePromptView.canPresent(offer, in: CGSize(width: 844, height: 390)))
+        XCTAssertFalse(offer.force)
+    }
+    func testUpdateDimensionsKeepDPPercentAndAutoSemantics() throws {
+        let base: [String: Any] = ["open": 1, "force": 0, "title": "标题", "desc": "说明",
+            "version": "1.0.2", "time": "2026-11-05", "url": "https://fixture.test/update"]
+        var points = base; points["width"] = 320; points["height"] = "240"
+        let pointOffer = try XCTUnwrap(UpdatePolicy.offer(points))
+        XCTAssertEqual(pointOffer.width, .points(320)); XCTAssertEqual(pointOffer.height, .points(240))
+        var percent = base; percent["width"] = "50%"; percent["height"] = "75%"
+        let percentOffer = try XCTUnwrap(UpdatePolicy.offer(percent))
+        XCTAssertEqual(percentOffer.width, .percent(0.5)); XCTAssertEqual(percentOffer.height, .percent(0.75))
+        XCTAssertEqual(percentOffer.width.resolve(in: 844), 422)
+        XCTAssertEqual(try XCTUnwrap(percentOffer.height).resolve(in: 390), 292.5)
+        var automatic = base; automatic["width"] = "50%"; automatic["height"] = "auto"
+        let automaticOffer = try XCTUnwrap(UpdatePolicy.offer(automatic))
+        XCTAssertEqual(automaticOffer.width, .percent(0.5)); XCTAssertNil(automaticOffer.height)
+    }
+    func testUpdateOfferWaitsForDismissalAndMalformedConfigContinuesLogin() async throws {
+        func payload(_ update: Any) throws -> Data {
+            var root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(privacy: false)) as? [String: Any])
+            var body = try XCTUnwrap(root["data"] as? [String: Any]); body["updateInfo"] = update; root["data"] = body
+            return try JSONSerialization.data(withJSONObject: root)
+        }
+        let offer: [String: Any] = ["open":1,"width":"80%","height":"auto","force":0,
+            "title":"新版本","desc":"说明","version":"1.0.2","time":"今天","url":"https://fixture.test/update"]
+        let backend = StubBackend(try payload(offer))
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: backend,
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway())
+        var shown = false
+        sut.onView = { event in if case .update = event { shown = true } }
+        await sut.start(); XCTAssertTrue(shown); XCTAssertEqual(sut.phase, .updating)
+        sut.finishUpdate()
+        for _ in 0..<10 where sut.phase != .login { await Task.yield() }
+        XCTAssertEqual(sut.phase, .login)
+        let invalidBackend = StubBackend(try payload(["open":1,"url":"https://fixture.test/app.apk"]))
+        let normal = AppCoordinator(identity: identity, policy: policy, backend: invalidBackend,
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway())
+        await normal.start(); XCTAssertEqual(normal.phase, .login)
+    }
+    func testOpenUpdateShowsEvenWhenTargetVersionEqualsInstalledVersion() async throws {
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(privacy: false)) as? [String: Any])
+        var body = try XCTUnwrap(root["data"] as? [String: Any])
+        body["updateInfo"] = ["open":1,"width":"80%","height":"auto","force":0,
+            "title":"当前版本维护提示","desc":"查看更新入口","version":"1.0.2","time":"今天",
+            "url":"https://fixture.test/update"]
+        root["data"] = body
+        let backend = StubBackend(try JSONSerialization.data(withJSONObject: root))
+        let sut = AppCoordinator(identity: GameIdentity(gameID: 29, version: "1.0.2", packageCode: ""),
+            policy: policy, backend: backend, repository: MemoryRepository(), vault: MemoryVault(),
+            gateway: UnavailableAuthGateway())
+        var updateShown = false
+        sut.onView = { event in if case .update = event { updateShown = true } }
+        await sut.start()
+        XCTAssertTrue(updateShown)
+        XCTAssertEqual(sut.phase, .updating)
+    }
     func testPageParsingRejectsInvalidDimensionsAndInstance() throws {
         var root = try JSONSerialization.jsonObject(with: fixture()) as! [String: Any]
         var body = root["data"] as! [String: Any], pages = body["h5Pages"] as! [String: [String: Any]]
@@ -129,17 +218,77 @@ struct CapturingTransport: HTTPTransport {
         await sut.start()
         XCTAssertEqual(backend.requests.first?["Devicecode"], ""); XCTAssertEqual(backend.requests.first?["Accountoken"], "")
         XCTAssertEqual(backend.requests.first?["Packagecode"], ""); XCTAssertEqual(backend.requests.first?["Devicetype"], "ios")
+        XCTAssertEqual(backend.requests.first?["Notchscreen"], "0")
+        XCTAssertEqual(backend.requests.first?["Screenmode"], "vertical")
         XCTAssertEqual(sut.stored.deviceCode, "")
         _ = await call(sut, "agreePrivacyPolicy", page: "web_agreement")
         XCTAssertEqual(sut.stored.deviceCode.count, 32)
         _ = await call(sut, "notifyLoginSuccess", ["accountToken": "h5-token"], page: "web_login")
         XCTAssertEqual(vault.token, "h5-token"); XCTAssertEqual(sut.phase, .game)
     }
+    func testNotchHeaderUsesCurrentDeviceState() async {
+        var notched = true
+        let backend = StubBackend(fixture())
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: backend,
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            notchScreen: { notched })
+        await sut.start()
+        XCTAssertEqual(backend.requests.first?["Notchscreen"], "1")
+        let bridgeNotched = await call(sut, "getGameInfo", page: "web_agreement")
+        XCTAssertEqual((bridgeNotched?.data as? [String: Any])?["notchScreen"] as? Int, 1)
+        notched = false
+        XCTAssertEqual(sut.headers["Notchscreen"], "0")
+        let bridgePlain = await call(sut, "getGameInfo", page: "web_agreement")
+        XCTAssertEqual((bridgePlain?.data as? [String: Any])?["notchScreen"] as? Int, 0)
+        XCTAssertTrue(NotchScreenDetector.hasCutout(insets: UIEdgeInsets(top: 47, left: 0, bottom: 34, right: 0), orientation: .portrait))
+        XCTAssertTrue(NotchScreenDetector.hasCutout(insets: UIEdgeInsets(top: 0, left: 47, bottom: 21, right: 47), orientation: .landscapeLeft))
+        XCTAssertFalse(NotchScreenDetector.hasCutout(insets: UIEdgeInsets(top: 20, left: 0, bottom: 0, right: 0), orientation: .portrait))
+    }
+    func testScreenModeFeedsBridgeHeadersAndChangeCommand() async {
+        var mode = ScreenMode.horizontal
+        var changes: [ScreenMode] = []
+        let backend = StubBackend(fixture())
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: backend,
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, changeScreenMode: { requested in changes.append(requested); mode = requested })
+        await sut.start()
+        XCTAssertEqual(backend.requests.first?["Screenmode"], "horizontal")
+        let info = await call(sut, "getGameInfo", page: "web_agreement")
+        XCTAssertEqual((info?.data as? [String: Any])?["screenMode"] as? String, "horizontal")
+
+        let unchanged = await call(sut, "changeScreenmode", ["mode": "horizontal"], page: "web_agreement")
+        XCTAssertEqual(unchanged?.data as? Bool, true); XCTAssertTrue(changes.isEmpty)
+        let changed = await call(sut, "changeScreenmode", ["mode": "vertical"], page: "web_agreement")
+        XCTAssertEqual(changed?.data as? Bool, true); XCTAssertEqual(changes, [.vertical])
+        XCTAssertEqual(sut.headers["Screenmode"], "vertical")
+        let verticalInfo = await call(sut, "getGameInfo", page: "web_agreement")
+        XCTAssertEqual((verticalInfo?.data as? [String: Any])?["screenMode"] as? String, "vertical")
+
+        for invalid: Any in [[String: Any](), ["mode": "square"], ["mode": 1], false] {
+            let response = await call(sut, "changeScreenmode", invalid, page: "web_agreement")
+            XCTAssertEqual(response?.code, 1001); XCTAssertEqual(response?.message, "参数无效")
+            XCTAssertEqual(response?.data as? Bool, false)
+        }
+    }
+    func testScreenOrientationMappingUsesInterfaceOrientationThenBounds() {
+        XCTAssertEqual(ScreenOrientationController.mode(interfaceOrientation: .landscapeLeft,
+                                                        bounds: CGSize(width: 390, height: 844), fallback: .vertical), .horizontal)
+        XCTAssertEqual(ScreenOrientationController.mode(interfaceOrientation: .portrait,
+                                                        bounds: CGSize(width: 844, height: 390), fallback: .horizontal), .vertical)
+        XCTAssertEqual(ScreenOrientationController.mode(interfaceOrientation: .unknown,
+                                                        bounds: CGSize(width: 844, height: 390), fallback: .vertical), .horizontal)
+        XCTAssertEqual(ScreenOrientationController.mode(interfaceOrientation: .unknown,
+                                                        bounds: .zero, fallback: .vertical), .vertical)
+    }
     func testChannelDirectoryFeedsBridgeAndHTTPHeadersBeforeAndAfterConsent() async throws {
         let payload = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: payload) }
         try FileManager.default.createDirectory(at: payload.appendingPathComponent("Game.app/packCode/1-218"), withIntermediateDirectories: true)
-        let channelIdentity = GameIdentity(gameID: 29, version: "1.0.1", packageCode: ChannelCodeReader.read(payloadDirectory: payload))
+        let app = payload.appendingPathComponent("Game.app")
+        let info: [String: Any] = ["CFBundleIdentifier":"test.channel.flow", "CFBundlePackageType":"APPL",
+                                 "QSMGameID":"29", "CFBundleShortVersionString":"1.0.1"]
+        try PropertyListSerialization.data(fromPropertyList:info,format:.xml,options:0).write(to:app.appendingPathComponent("Info.plist"))
+        let channelIdentity = try RuntimeConfiguration.load(bundle:XCTUnwrap(Bundle(url:app))).identity
         let backend = StubBackend(fixture()), vault = MemoryVault()
         let sut = AppCoordinator(identity: channelIdentity, policy: policy, backend: backend,
             repository: MemoryRepository(), vault: vault, gateway: UnavailableAuthGateway())
@@ -321,12 +470,14 @@ struct CapturingTransport: HTTPTransport {
         var state = StoredState(); state.consent = .agreed; state.installationID = "test-installation"; state.values = ["k": "v"]
         try file.save(state); XCTAssertEqual(try file.load(), state)
     }
-    func testAPIRequestContainsAllSixHeadersAndRejectsHTTPError() async throws {
+    func testAPIRequestContainsAllHeadersAndRejectsHTTPError() async throws {
         let transport = CapturingTransport { request in
             XCTAssertEqual(request.httpMethod, "POST"); XCTAssertEqual(request.value(forHTTPHeaderField: "Packagecode"), "")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Devicetype"), "ios")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Devicecode"), ""); XCTAssertEqual(request.value(forHTTPHeaderField: "Accountoken"), "")
             XCTAssertEqual(request.value(forHTTPHeaderField: "Gameid"), "29"); XCTAssertEqual(request.value(forHTTPHeaderField: "Gameversion"), "1.0.1")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Notchscreen"), "0")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Screenmode"), "vertical")
             XCTAssertEqual(request.httpBody, Data("{}".utf8))
             return (Data("{\"code\":0}".utf8), 503)
         }

@@ -13,9 +13,9 @@ project.root_object.development_region = 'zh-Hans'
 project.root_object.known_regions = ['zh-Hans', 'en', 'Base']
 project.root_object.attributes['LastUpgradeCheck'] = '1640'
 
-app = project.new_target(:application, 'QSMH5App', :ios, '16.0')
-unit = project.new_target(:unit_test_bundle, 'QSMH5AppTests', :ios, '16.0')
-ui = project.new_target(:ui_test_bundle, 'QSMH5AppUITests', :ios, '16.0')
+app = project.new_target(:application, 'QSMH5App', :ios, '14.0')
+unit = project.new_target(:unit_test_bundle, 'QSMH5AppTests', :ios, '14.0')
+ui = project.new_target(:ui_test_bundle, 'QSMH5AppUITests', :ios, '14.0')
 configs = project.main_group.new_group('Config', 'Config')
 references = {}
 Dir[File.join(root, 'Config', '*.xcconfig')].sort.each do |path|
@@ -29,7 +29,9 @@ end
 end
 resources = project.main_group.new_group('Resources', 'Resources')
 Dir[File.join(root, 'Resources', '*')].sort.each do |path|
-  app.resources_build_phase.add_file_reference(resources.new_file(File.basename(path)))
+  ref = resources.new_file(File.basename(path))
+  ref.last_known_file_type = "folder" if File.directory?(path) && !path.end_with?(".xcassets")
+  app.resources_build_phase.add_file_reference(ref)
 end
 [app, unit, ui].each do |target|
   ['Debug-Local', 'Debug-Integration', 'Release'].each { |name| target.add_build_configuration(name, name == 'Release' ? :release : :debug) }
@@ -37,7 +39,7 @@ end
   target.build_configurations.each do |config|
     settings = config.build_settings
     settings['SWIFT_VERSION'] = '5.0'
-    settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+    settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
     settings['TARGETED_DEVICE_FAMILY'] = '1'
     settings['CODE_SIGN_STYLE'] = target == app ? nil : 'Automatic'
     settings['ENABLE_USER_SCRIPT_SANDBOXING'] = 'NO'

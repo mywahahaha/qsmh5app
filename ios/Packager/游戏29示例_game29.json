@@ -1,0 +1,13 @@
+{
+  "game_id": 29,
+  "display_name": "全民红月",
+  "bundle_id": "com.un74meng.yjhcmc",
+  "version": "1.0.1",
+  "build": "4",
+  "orientation": "landscape",
+  "icon_path": "游戏出包/全民红月/icon.png",
+  "convert_icon": true,
+  "splash_dir": "refs/打包资料/证书/闪图",
+  "game_url": "https://box.74meng.com/h5/play?gid=29&sid=1&cid=218&app=1&xid=0",
+  "channel_code": ""
+}

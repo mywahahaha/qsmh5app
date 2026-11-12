@@ -2,14 +2,19 @@ package com.qishimeng.game.update
 
 import java.net.URI
 
+sealed interface UpdateDimension {
+    data class Dp(val value: Float) : UpdateDimension
+    data class Percent(val value: Float) : UpdateDimension
+}
+
 data class UpdateInfo(
     val title: String,
     val description: String,
     val version: String,
     val downloadUrl: String,
     val force: Boolean,
-    val widthPercent: Float = 50f,
-    val heightPercent: Float? = null,
+    val width: UpdateDimension = UpdateDimension.Dp(50f),
+    val height: UpdateDimension? = null,
     val popup: Boolean = false,
     val time: String = ""
 )
@@ -25,8 +30,10 @@ object UpdatePolicy {
         if (fields.isEmpty()) return UpdateDecision.Continue
         return try {
             if (!fields.flag("open")) return UpdateDecision.Continue
-            val width = percent(fields["width"], "width")
-            val height = if (fields["height"] == "auto") null else percent(fields["height"], "height")
+            val width = dimension(fields["width"], "width")
+            val heightValue = fields["height"]
+            val height = if (heightValue is String && heightValue.trim() == "auto") null
+            else dimension(heightValue, "height")
             val popup = fields.flag("popup")
             val force = fields.flag("force")
             val url = fields.text("url").trim()
@@ -57,13 +64,18 @@ object UpdatePolicy {
         return get(name) as String
     }
 
-    private fun percent(value: Any?, name: String): Float {
-        val result = when (value) {
-            is Number -> value.toFloat()
-            is String -> value.trim().removeSuffix("%").toFloatOrNull()
-            else -> null
-        }
-        require(result != null && result.isFinite() && result > 0f && result <= 100f) { "$name 百分比无效" }
-        return result
+    private fun dimension(value: Any?, name: String): UpdateDimension {
+        if (value is Number) return UpdateDimension.Dp(value.toFloat().also { requireDp(it, name) })
+        require(value is String) { "$name 尺寸无效" }
+        val text = value.trim()
+        val isPercent = text.endsWith("%")
+        val number = text.removeSuffix("%").trim().toFloatOrNull()
+        require(number != null && number.isFinite() && number > 0f) { "$name 尺寸无效" }
+        if (isPercent) require(number <= 100f) { "$name 百分比无效" }
+        return if (isPercent) UpdateDimension.Percent(number) else UpdateDimension.Dp(number)
+    }
+
+    private fun requireDp(value: Float, name: String) {
+        require(value.isFinite() && value > 0f) { "$name 尺寸无效" }
     }
 }

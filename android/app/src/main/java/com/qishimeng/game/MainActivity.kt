@@ -2,6 +2,7 @@ package com.qishimeng.game
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.os.Build
@@ -44,6 +45,7 @@ import com.qishimeng.game.config.ParseResult
 import com.qishimeng.game.device.NotchScreenDetector
 import com.qishimeng.game.device.ScreenMode
 import com.qishimeng.game.device.ScreenModeController
+import com.qishimeng.game.device.WelfareScreenModeSession
 import com.qishimeng.game.floatball.FloatingBallController
 import com.qishimeng.game.floatball.FloatingBallView
 import com.qishimeng.game.network.ApiClient
@@ -104,8 +106,15 @@ class MainActivity : AppCompatActivity() {
     private var externalBrowserOrientation: Int? = null
     private var pausedForExternalBrowser = false
     private var externalBrowserLaunched = false
+    private var pendingHostLayoutListener: View.OnLayoutChangeListener? = null
+    private var pendingWelfareClose: PendingWelfareClose? = null
+    private var welfareCloseInProgress = false
     private val screenModeController = ScreenModeController(
         currentOrientation = { resources.configuration.orientation },
+        requestOrientation = { requestedOrientation = it }
+    )
+    private val welfareScreenModeSession = WelfareScreenModeSession(
+        selectHorizontal = { screenModeController.change("horizontal") },
         requestOrientation = { requestedOrientation = it }
     )
     @Volatile private var notchScreen = 0
@@ -194,8 +203,25 @@ class MainActivity : AppCompatActivity() {
         if (hasFocus) enterImmersiveFullscreen()
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        enterImmersiveFullscreen()
+        if (newConfig.orientation != Configuration.ORIENTATION_LANDSCAPE &&
+            newConfig.orientation != Configuration.ORIENTATION_PORTRAIT) return
+        runWhenHostMatchesOrientation(newConfig.orientation) {
+            if (welfareScreenModeSession.onConfigurationChanged(newConfig.orientation)) {
+                openWelfareAfterOrientationReady()
+            }
+            val container = webContainer
+            if (container == null) completePendingWelfareClose(newConfig.orientation)
+            else container.relayoutAll { completePendingWelfareClose(newConfig.orientation) }
+        }
+    }
+
     override fun onDestroy() {
         mainHandler.removeCallbacks(cutoutInsetsFallback)
+        pendingHostLayoutListener?.let { host.removeOnLayoutChangeListener(it) }
+        pendingHostLayoutListener = null
         heartbeatSession?.close()
         heartbeatSession = null
         if (::networkGate.isInitialized) networkGate.close()
@@ -268,7 +294,7 @@ class MainActivity : AppCompatActivity() {
                     stopPopupHeartbeat()
                     floatingBallController?.resetSession()
                 }
-                refreshFloatingBall()
+                if (instance != "web_welfare" || !welfareCloseInProgress) refreshFloatingBall()
             },
             onExternalNavigation = ::openExternalUrl,
             bridgeInstaller = { view, instance -> installBridge(view, instance) },
@@ -395,7 +421,7 @@ class MainActivity : AppCompatActivity() {
         val controller = floatingBallController ?: return
         val container = webContainer ?: return
         val sessionReady = gamePageReady && container.hasWindow("web_game") && !tokenStore.token.isNullOrBlank() &&
-            !isFinishing && !isDestroyed
+            !isFinishing && !isDestroyed && !welfareCloseInProgress
         controller.setSessionReady(sessionReady)
         // 大厅可以保留在游戏后方；只在大厅位于游戏上方时临时隐藏球。
         val windows = container.windowNames()
@@ -404,7 +430,7 @@ class MainActivity : AppCompatActivity() {
         if (state.visible && floatingBall == null) {
             val config = initConfig?.floatingBall ?: return
             floatingBall = FloatingBallView(this, floatingBallLayer, config, state.active) {
-                webContainer?.openConfigured("welfare")
+                openWelfareFromFloatingBall()
             }
         }
         floatingBall?.setActive(state.active)
@@ -430,6 +456,106 @@ class MainActivity : AppCompatActivity() {
         controller.setRuntimeState(show, active)
         refreshFloatingBall()
         return true
+    }
+
+    private fun openWelfareFromFloatingBall() {
+        openMiniWindow("web_welfare")
+    }
+
+    private fun openMiniWindow(instanceName: String): Boolean {
+        val container = webContainer ?: return false
+        if (instanceName != "web_welfare") return container.openInstance(instanceName) != null
+        val configured = initConfig?.pages?.values?.any { it.instance == instanceName } == true
+        if (!configured) return false
+        if (!container.hasWindow("web_welfare")) container.clearPendingGameUrl()
+        if (welfareScreenModeSession.shouldOpenNow(resources.configuration.orientation)) {
+            return openWelfareAfterOrientationReady()
+        }
+        return true
+    }
+
+    private fun openWelfareAfterOrientationReady(): Boolean {
+        val opened = webContainer?.openConfigured("welfare") != null
+        if (!opened) welfareScreenModeSession.cancelPendingOpen()
+        return opened
+    }
+
+    private fun closeWelfarePageFromBridge(mode: Any?, loadPendingGameUrl: Boolean): Boolean {
+        val container = webContainer ?: return false
+        val pendingUrl = if (loadPendingGameUrl) container.takePendingGameUrl()
+        else null.also { container.clearPendingGameUrl() }
+        welfareCloseInProgress = true
+        val closed = container.close("web_welfare")
+        val targetMode = runCatching { ScreenMode.fromValue(mode) }.getOrNull()
+        if (!closed) {
+            welfareCloseInProgress = false
+            targetMode?.let { screenModeController.change(it.value) }
+            refreshFloatingBall()
+            return false
+        }
+        val targetOrientation = when (targetMode) {
+            ScreenMode.HORIZONTAL -> Configuration.ORIENTATION_LANDSCAPE
+            ScreenMode.VERTICAL -> Configuration.ORIENTATION_PORTRAIT
+            null -> resources.configuration.orientation
+        }
+        pendingWelfareClose = PendingWelfareClose(targetOrientation, pendingUrl)
+        targetMode?.let { screenModeController.change(it.value) }
+        if (resources.configuration.orientation == targetOrientation) {
+            runWhenHostMatchesOrientation(targetOrientation) {
+                val activeContainer = webContainer
+                if (activeContainer == null) completePendingWelfareClose(targetOrientation)
+                else activeContainer.relayoutAll { completePendingWelfareClose(targetOrientation) }
+            }
+        }
+        return true
+    }
+
+    private fun completePendingWelfareClose(orientation: Int) {
+        val pending = pendingWelfareClose ?: return
+        if (pending.orientation != orientation || !hostMatchesOrientation(orientation)) return
+        pendingWelfareClose = null
+        welfareCloseInProgress = false
+        val url = pending.gameUrl
+        if (url == null) {
+            refreshFloatingBall()
+            return
+        }
+        gamePageReady = false
+        refreshFloatingBall()
+        if (webContainer?.changeGameUrl(url) != true) {
+            gamePageReady = webContainer?.hasWindow("web_game") == true
+            refreshFloatingBall()
+        }
+    }
+
+    private fun runWhenHostMatchesOrientation(orientation: Int, action: () -> Unit) {
+        pendingHostLayoutListener?.let { host.removeOnLayoutChangeListener(it) }
+        lateinit var listener: View.OnLayoutChangeListener
+        fun completeIfReady() {
+            if (pendingHostLayoutListener !== listener) return
+            if (!hostMatchesOrientation(orientation)) return
+            host.removeOnLayoutChangeListener(listener)
+            pendingHostLayoutListener = null
+            host.post {
+                if (isFinishing || isDestroyed) return@post
+                if (hostMatchesOrientation(orientation)) action()
+                else runWhenHostMatchesOrientation(orientation, action)
+            }
+        }
+        listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> completeIfReady() }
+        pendingHostLayoutListener = listener
+        host.addOnLayoutChangeListener(listener)
+        host.requestLayout()
+        host.post { completeIfReady() }
+    }
+
+    private fun hostMatchesOrientation(orientation: Int): Boolean {
+        if (host.width <= 0 || host.height <= 0) return false
+        return when (orientation) {
+            Configuration.ORIENTATION_LANDSCAPE -> host.width > host.height
+            Configuration.ORIENTATION_PORTRAIT -> host.height > host.width
+            else -> false
+        }
     }
 
     private fun installBridge(webView: WebView, instance: String, operationalTrustedUrl: String? = null) {
@@ -466,7 +592,13 @@ class MainActivity : AppCompatActivity() {
             },
             onPrivacyRejected = { mainHandler.post { finishAffinity() } },
             onPhoneLoginFallback = { mainHandler.post(::openH5LoginPage) },
-            changeScreenMode = screenModeController::change
+            changeScreenMode = screenModeController::change,
+            openMiniWindow = ::openMiniWindow,
+            cancelPendingWelfareOpen = welfareScreenModeSession::cancelPendingOpen,
+            changeGameUrl = { url, waitCloseWelfarepage ->
+                webContainer?.changeGameUrl(url, waitCloseWelfarepage) ?: false
+            },
+            closeWelfarePageAction = ::closeWelfarePageFromBridge
         )
         val bridge = BridgeJavascriptInterface(webView, actions) {
             webContainer?.get(instance)?.webView === webView
@@ -516,7 +648,7 @@ class MainActivity : AppCompatActivity() {
             deviceType = "android",
             deviceCode = deviceCodeProvider.get(agreed),
             notchScreen = notchScreen,
-            screenMode = ScreenMode.fromConfiguration(resources.configuration.orientation).value
+            screenMode = screenModeController.currentMode().value
         )
     }
 
@@ -606,6 +738,11 @@ class MainActivity : AppCompatActivity() {
         }, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
     }
 }
+
+private data class PendingWelfareClose(
+    val orientation: Int,
+    val gameUrl: String?
+)
 
 internal fun createExternalBrowserIntent(url: String): Intent =
     Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)

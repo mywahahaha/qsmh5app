@@ -17,15 +17,26 @@ class UpdatePolicyTest {
 
     @Test fun newContractEnablesUpdateWithAutoHeightAndBothModes() {
         val auto = (UpdatePolicy.evaluate(fields()) as UpdateDecision.Offer).info
-        assertEquals(50f, auto.widthPercent, 0.001f)
-        assertNull(auto.heightPercent)
+        assertEquals(UpdateDimension.Dp(50f), auto.width)
+        assertNull(auto.height)
         assertTrue(auto.force); assertFalse(auto.popup)
         assertEquals("2026-10-28", auto.time)
         val fixed = (UpdatePolicy.evaluate(fields() + mapOf("width" to 75, "height" to "65%", "popup" to 1)) as UpdateDecision.Offer).info
-        assertEquals(75f, fixed.widthPercent, 0.001f)
-        assertEquals(65f, fixed.heightPercent!!, 0.001f)
+        assertEquals(UpdateDimension.Dp(75f), fixed.width)
+        assertEquals(UpdateDimension.Percent(65f), fixed.height)
         assertTrue(fixed.popup)
         assertTrue(UpdatePolicy.evaluate(fields() + mapOf("title" to "", "desc" to "", "version" to "", "time" to "")) is UpdateDecision.Offer)
+    }
+
+    @Test fun percentDimensionsRequirePercentSignAndNumericStringsAreDp() {
+        val info = (UpdatePolicy.evaluate(fields() + mapOf("width" to "50%", "height" to "60")) as UpdateDecision.Offer).info
+        assertEquals(UpdateDimension.Percent(50f), info.width)
+        assertEquals(UpdateDimension.Dp(60f), info.height)
+    }
+
+    @Test fun dimensionToPixelsUsesDensityOnlyForDp() {
+        assertEquals(100, UpdateDimension.Dp(50f).toPixels(600, 2f))
+        assertEquals(300, UpdateDimension.Percent(50f).toPixels(600, 2f))
     }
 
     @Test fun externalUpdateCanUseAnHttpLandingPageWithFragment() {
@@ -35,7 +46,7 @@ class UpdatePolicyTest {
     @Test fun invalidFlagsPercentagesTypesAndUrlsAbortOnlyTheUpdate() {
         for (change in listOf(
             mapOf("open" to 1.5), mapOf("force" to "1"), mapOf("popup" to 2),
-            mapOf("width" to "0"), mapOf("height" to 101), mapOf("height" to "NaN"),
+            mapOf("width" to "0"), mapOf("width" to "101%"), mapOf("height" to 0), mapOf("height" to "101%"), mapOf("height" to "NaN"),
             mapOf("title" to 123), mapOf("url" to "file:///app.apk"), mapOf("url" to "https://"),
             mapOf("url" to "https://user:password@example.com/app.apk")
         )) assertTrue("应拒绝 $change", UpdatePolicy.evaluate(fields() + change) is UpdateDecision.Abort)

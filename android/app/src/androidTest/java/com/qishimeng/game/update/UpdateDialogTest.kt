@@ -1,7 +1,9 @@
 package com.qishimeng.game.update
 
 import android.graphics.Bitmap
+import android.graphics.drawable.GradientDrawable
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -24,7 +26,7 @@ class UpdateDialogTest {
     private var installed = 0
     private fun info(force: Boolean = false, height: Float? = null) = UpdateInfo(
         "邀您体验新版本", "发现新版本 V1.0.12", "1.0.2", "https://example.com/app.apk", force,
-        widthPercent = 50f, heightPercent = height, time = "2026-06-10"
+        width = UpdateDimension.Percent(50f), height = height?.let(UpdateDimension::Dp), time = "2026-06-10"
     )
     private fun show(info: UpdateInfo) {
         onMain {
@@ -40,10 +42,18 @@ class UpdateDialogTest {
         onMain {
             val root = dialog!!.window!!.decorView
             val panel = root.findViewWithTag<View>("update_panel")
-            assertEquals("接口宽度整体缩小 30%", root.width * 0.5f * 0.7f, panel.width.toFloat(), 2f)
+            assertEquals("百分比宽度直接按屏幕计算", root.width * 0.5f, panel.width.toFloat(), 2f)
             assertEquals(0.45f, dialog!!.window!!.attributes.dimAmount, 0.001f)
-            assertTrue(root.findViewWithTag<View>("update_close").isShown)
+            val close = root.findViewWithTag<View>("update_close")
+            assertTrue(close.isShown)
+            assertEquals(0xff000000.toInt(), (close.background as GradientDrawable).color!!.defaultColor)
             assertEquals("邀您体验新版本", root.findViewWithTag<TextView>("update_title").text.toString())
+            val version = root.findViewWithTag<TextView>("update_metadata_version")
+            val time = root.findViewWithTag<TextView>("update_metadata_time")
+            assertEquals("最新版本：1.0.2", version.text.toString())
+            assertEquals("更新时间：2026-06-10", time.text.toString())
+            val metadata = root.findViewWithTag<LinearLayout>("update_metadata")
+            if (metadata.orientation == LinearLayout.HORIZONTAL) assertEquals(15, time.left - version.right)
             root.findViewWithTag<View>("update_action").performClick()
             assertEquals(1, updated)
         }
@@ -73,11 +83,11 @@ class UpdateDialogTest {
         screenshot("update-ready.png")
     }
 
-    @Test fun fixedHeightIsPercentageAndLongContentCanScrollWithoutHidingClose() {
+    @Test fun fixedHeightIsDpAndLongContentCanScrollWithoutHidingClose() {
         show(info(height = 60f).copy(description = "新版本更新内容\n".repeat(40)))
         onMain {
             val root = dialog!!.window!!.decorView
-            assertEquals("接口固定高度整体缩小 30%", root.height * 0.6f * 0.7f, root.findViewWithTag<View>("update_panel").height.toFloat(), 2f)
+            assertEquals("dp 高度直接按 dp 计算", 60f * root.resources.displayMetrics.density, root.findViewWithTag<View>("update_panel").height.toFloat(), 2f)
             assertTrue(root.findViewWithTag<View>("update_close").isShown)
             val panel = root.findViewWithTag<android.widget.ScrollView>("update_panel")
             assertTrue("内容超过固定高度弹窗时必须可以滚动", panel.getChildAt(0).height > panel.height)

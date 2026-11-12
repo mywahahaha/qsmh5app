@@ -3,11 +3,11 @@
 ## 文档信息
 
 - 项目：qishimeng_h5_sdk
-- 文档版本：v0.18
-- 更新日期：2026-11-02
-- 状态：业务口径已定稿；Android 真机测试已完成（2026-11-02 用户确认）；接口契约补充与审查问题继续跟踪
+- 文档版本：v0.21
+- 更新日期：2026-11-12
+- 状态：业务口径已定稿；既有真机测试于 2026-11-02 由用户确认，本次 Native 大厅方向事务、延迟游戏加载与视口重排已通过单元测试、Debug 构建和 AndroidTest 编译，仍待连接设备运行新增仪器用例
 
-本次修订仅同步测试进度。当前验证状态见[安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md)，实现与文档差异见[代码与文档一致性审查](docs/代码与文档一致性审查_code-documentation-audit.md)。
+本次修订统一福利大厅的横屏打开流程，增加可选择的延迟游戏地址加载，并要求方向变化后由 Native 按新宿主尺寸重新布局全部 H5 页面；H5 通过标准 viewport 变化自行适配，不再依赖私有方向通知。当前验证状态见[安卓工程构建与联调指南](docs/安卓工程构建与联调指南_android-build-and-integration.md)，实现与文档差异见[代码与文档一致性审查](docs/代码与文档一致性审查_code-documentation-audit.md)。
 
 ## 1. 项目概述
 
@@ -113,7 +113,7 @@ https://box.74meng.com/h5_app/init
   "data": {
     "updateInfo": {
       "open": 0,
-      "width": "50",
+      "width": "50%",
       "height": "auto",
       "popup": 1,
       "force": 0,
@@ -293,14 +293,17 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 ### 4.5 游戏主 WebView
 
 - 登录成功后打开游戏 WebView（本质为封装 H5 页面的壳），并销毁 H5 登录实例 `web_login`。Token 自动登录、阿里云登录和 `notifyLoginSuccess` 成功均使用同一切换流程。
-- 游戏存在时打开福利大厅 `web_welfare`，将大厅置顶，保留游戏 WebView 及其当前文档状态。同名大厅已存在时复用置顶，不重复创建，也不关闭游戏。
+- 游戏存在时打开福利大厅 `web_welfare`，将大厅置顶，保留游戏 WebView 及其当前文档状态。同名大厅已存在时复用置顶，不重复创建，也不关闭游戏。点击悬浮球和 `openMiniWindow({page:'web_welfare'})` 使用同一入口：先将业务方向同步为 `horizontal`；物理方向不是横屏时请求横屏并等待宿主完成横屏非零布局，再打开大厅。原本已横屏时不重复请求系统旋转。
 - APP 使用沉浸式全屏：隐藏状态栏、导航栏以及电池和信号等系统工具栏；Android 游戏 WebView 与宿主窗口延伸到刘海、挖孔区域，不在原生层为游戏页面预留缺口边距。H5 页面实例、悬浮球和一键登录弹窗的尺寸与定位均基于隐藏系统栏后的完整设备视口计算；H5 根据 `Notchscreen` 或 `getGameInfo.data.notchScreen` 自行避让重要内容。
 - 建议最低支持 Android API 23（Android 6.0）；Web 内容使用设备当前稳定版 Android System WebView，不在应用中固定 Chromium 内核版本。验收覆盖 Android 8、10、13、15，并记录设备系统与 WebView 版本。
 - H5 游戏页面可通过 JS 从游戏端获取 `accountToken`，并在服务器端处理。
-- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`、`notchScreen`、`screenMode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；`notchScreen` 为系统报告有刘海或挖孔时的整数 `1`，否则为 `0`；`screenMode` 按当前应用方向返回，横屏为 `horizontal`、竖屏为 `vertical`；用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
-- `changeScreenmode({mode})` 将当前应用强制切换为横屏或竖屏，`mode` 仅允许 `horizontal`、`vertical`。目标方向与当前方向一致时不重复请求系统切换，但仍返回 `code:0,data:true`；值缺失、类型错误或不在允许范围内时返回 `code:1001,msg:"参数无效",data:null`。
-- `changeGameUrl({url})` 用于切换 `web_game`：URL 必须是有效绝对 HTTP/HTTPS 地址，主机名与初始化 `h5Pages.game.url` 的主机名精确匹配，不自动允许子域，且不使用仅服务于外部浏览器跳转的 `jumpDomain`。已有 `web_game` 时在原实例中导航到新 URL 并置顶；不存在时创建、加载该 URL 并置顶。地址校验通过且原生接受导航操作时返回 `data:true`，参数/地址校验或原生导航操作失败时返回 `data:false`；`true` 不代表远端页面加载成功。
-- 福利大厅调用 `changeGameUrl` 时，直接在现有游戏 WebView 中加载新地址，不关闭、销毁或重建游戏实例；新文档会替换旧文档，旧页面 JS 状态不保留。大厅保留在游戏后方，游戏置顶后恢复运行时悬浮球状态，下次打开大厅继续复用大厅实例。
+- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`、`notchScreen`、`screenMode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；`notchScreen` 为系统报告有刘海或挖孔时的整数 `1`，否则为 `0`；`screenMode` 表示当前**业务方向**，横屏为 `horizontal`、竖屏为 `vertical`。业务方向初始取出包配置，之后由成功的 `changeScreenmode` 或打开福利大厅时选择的横屏方向更新；用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
+- `changeScreenmode({mode})` 将当前应用强制切换为横屏或竖屏，并同步更新业务方向；`mode` 仅允许 `horizontal`、`vertical`。目标方向与当前业务方向一致时不重复请求系统切换，但仍返回 `code:0,data:true`；值缺失、类型错误或不在允许范围内时返回 `code:1001,msg:"参数无效",data:null`。方法成功后，后续 `getGameInfo.data.screenMode` 与原生请求 Header `Screenmode` 均使用新值，即使系统配置切换尚未完成也不得继续返回旧值。
+- 打开福利大厅时选择横屏后，`getGameInfo.data.screenMode` 与原生请求 Header `Screenmode` 立即同步为 `horizontal`。关闭大厅不自动恢复旧方向：`closePage` 和 `closeMiniWindow` 只关闭 H5 页面，不旋转、不加载游戏，并清除大厅关联的历史待加载地址。专用接口 `closeWelfarepage({mode,loadPendingGameUrl})` 固定先关闭 `web_welfare`；`mode` 为 `horizontal` 或 `vertical` 时再切换方向，缺失、非字符串或其他值时只关闭、不旋转且不返回参数错误。
+- `closeWelfarepage.loadPendingGameUrl` 为可选布尔值，默认 `false`。`false` 表示纯关闭并清除待加载地址，不得重载游戏；`true` 表示在目标方向和宿主布局稳定后一次性消费待加载地址。没有待加载地址时不得重载当前游戏；普通关闭、重复关闭、退出登录和旧关闭接口不得触发历史地址加载。
+- 实际物理方向发生变化后，原生必须等待宿主按新方向完成非零布局，并按当前可见区域重新计算所有仍打开 H5 页面的尺寸和位置。同方向请求也必须完成该布局事务；之后新打开的 H5 和重新导航的游戏页面直接按当前实际方向布局。Native 不发送自定义方向通知，H5 使用 `resize`、`visualViewport.resize` 和 `ResizeObserver` 等标准能力适配实际 viewport。
+- `changeGameUrl({url,waitCloseWelfarepage})` 用于切换 `web_game`：URL 必须是有效绝对 HTTP/HTTPS 地址，主机名与初始化 `h5Pages.game.url` 的主机名精确匹配，不自动允许子域，且不使用仅服务于外部浏览器跳转的 `jumpDomain`。`waitCloseWelfarepage` 缺失或为 `false` 时清除旧待加载地址，已有 `web_game` 时在原实例中立即导航并置顶，不存在时创建、加载并置顶；为 `true` 时仅覆盖保存单槽待加载地址，不导航、不置顶、不恢复悬浮球。地址校验通过且原生接受请求时返回 `data:true`，参数、地址校验或原生操作失败时返回 `data:false`；`true` 不代表远端页面加载成功。
+- 福利大厅进入新游戏时，H5 必须先调用 `changeGameUrl({url,waitCloseWelfarepage:true})` 保存待加载地址，再调用 `closeWelfarepage({mode,loadPendingGameUrl:true})` 关闭大厅并消费。新地址继续复用现有游戏 WebView，不关闭、销毁或重建游戏实例；新文档替换旧文档，旧页面 JS 状态不保留。
 - 初始化、游戏及相关 SDK 服务端请求由原生网络层统一附加以下 HTTP Header；无可用值时仍发送该 Header，值为空字符串（尤其未同意隐私协议时 `Devicecode` 为空）：
 
 | HTTP Header 名称 | 来源 |
@@ -312,7 +315,7 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 | `Accountoken` | 安全存储的 `accountToken`；未登录时为空 |
 | `Gameversion` | 本地常量 `gameVersion` |
 | `Notchscreen` | Android 系统报告有刘海或挖孔时为 `1`，否则为 `0`；不依赖隐私同意或登录状态 |
-| `Screenmode` | 当前应用方向；横屏为 `horizontal`，竖屏为 `vertical` |
+| `Screenmode` | 当前业务方向；初始取出包方向，之后随 `changeScreenmode` 或打开福利大厅选择横屏而更新 |
 
 上述八个 HTTP Header 仅要求用于初始化 `POST /h5_app/init`、运营心跳 `/h5_app/popup_interval`、阿里云一键登录兑换接口、本地 Token 自动登录 `POST /h5_app/login_by_token`。隐私同意前，初始化请求的 `Devicecode` 与 `Accountoken` 均发送空字符串；同意后本地 Token 自动登录时 `Accountoken` 携带本地 Token。其他业务请求 Header 另按接口契约约定。`Notchscreen` 仅表示是否存在缺口，不提供缺口尺寸或位置；Android 8 及以下没有统一系统缺口接口，当前实现按 `0` 发送。
 
@@ -379,13 +382,13 @@ HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_
 
 ## 5. 悬浮球与福利大厅
 
-- **创建与显隐：** 登录完成且 `web_game` 实例加载后，才创建并显示悬浮球；初始化配置 `floatball.show=false` 时隐藏，`true` 时允许显示。后续心跳或 H5 调用可以更新运行时 `show` 状态。福利大厅 `web_welfare` 位于游戏上方时强制临时隐藏；大厅关闭或游戏重新置顶后恢复运行时悬浮球状态，大厅保留在游戏后方不影响显示。游戏实例关闭或退出登录后不显示。
+- **创建与显隐：** 登录完成且 `web_game` 实例加载后，才创建并显示悬浮球；初始化配置 `floatball.show=false` 时隐藏，`true` 时允许显示。后续心跳或 H5 调用可以更新运行时 `show` 状态。福利大厅 `web_welfare` 位于游戏上方时强制临时隐藏；大厅关闭或游戏重新置顶后恢复运行时悬浮球状态。每次悬浮球从隐藏恢复显示时，必须先按初始化定位字段和当前实际可见区域重新计算位置，布局完成后再显示，不恢复隐藏前的拖动坐标，避免用户看到从旧位置跳到新位置。大厅保留在游戏后方不影响显示；游戏实例关闭或退出登录后不显示。
 - **激活与图标：** 默认 `active=false`，使用 `floatball.image_default`；`active=true` 使用 `floatball.image_active`。运行中的显隐和激活状态可由 JSBridge 或心跳响应更新。
 - 两种图标均支持静态图片和动态 GIF，按图片实际格式解码，不能将 GIF 固定为首帧；GIF 遵循素材的帧时长和循环设置。球体隐藏或应用退到后台时停止播放，重新显示/返回前台时恢复；切换图标或销毁视图时停止并释放旧图片请求，迟到结果不得覆盖新图标或重新挂载旧视图。
 - **尺寸和水平位置：** 初始化响应 `floatball` 支持 `show`、`image_default`、`image_active`、`width`、`height`、`left`、`right`、`top`、`bottom`。`width`、`height` 为正整数，单位为 dp，仅乘设备密度转换为 px，不按窗口宽度缩放；如 `width=20,height=20` 设置为 20dp × 20dp。`left`/`right` 为整数，本次沿用原有 360 宽设计基准缩放；同时提供时优先 `left`，两者缺失时按 `right=0`。
 - **垂直位置（2026-11-02 最终规则）：** `top` 优先于 `bottom`，同时存在时完全忽略 `bottom`；两者均缺失时按 `top=0`。生效字段必须为非负、有限的 JSON 数值；`0 < 值 < 1` 表示当前悬浮层完整高度的比例，如 `0.2` 表示 20%；`0` 表示贴对应边，`值 ≥ 1` 单位为 dp（`1` 即 1dp），只乘设备密度转换为 px，不按窗口宽度缩放。`top` 从球体上边缘计算，`bottom` 从球体下边缘计算。
 - 尺寸与最终坐标限制在当前悬浮层可见范围内，坐标计算完成后向下取整；窗口尺寸变化时重新计算。比例基于容器完整高度，非球体可拖动行程，不额外叠加安全区间距。详细公式、示例及与 PC 像素的区别见[初始化接口字段说明](docs/初始化接口字段说明_initialization-api.md#悬浮球字段-datafloatball安卓)。
-- 用户可垂直拖动悬浮球；点击后在游戏页面上层打开福利大厅。多个动态弹窗按心跳 `popup_pages` 数组顺序叠放，后项位于上层。
+- 用户可垂直拖动悬浮球；点击后在游戏页面上层打开福利大厅。打开时统一选择横屏业务方向，物理方向不是横屏时等待宿主横屏布局完成再打开；当前已横屏时不重复请求。关闭大厅不默认恢复方向，纯关闭使用 `closeWelfarepage({mode:'vertical',loadPendingGameUrl:false})` 等专用调用；从大厅进入新游戏时先延迟提交 URL，再以 `loadPendingGameUrl:true` 关闭。多个动态弹窗按心跳 `popup_pages` 数组顺序叠放，后项位于上层。
 - 图标或显隐状态未改变时不得重复加载图标；仅在图标确实变化时更新图像，避免重载闪动。位置或尺寸变化应更新布局，不应仅因此重载图像。
 - 初始化的 `floatball.show` 是初始状态；后续心跳和 H5 `setFloatingBall` 更新运行状态。福利大厅打开和游戏页关闭属于生命周期约束，分别临时隐藏及停止显示。
 
@@ -436,13 +439,13 @@ HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_
 
 ### 8.1 更新弹窗内容
 
-- 弹窗由 Android 原生视图绘制，使用用户提供的 `bg.png` 作为头部背景，保持头图比例；窗口白底、圆角按 Android 15dp 适配，显示效果参照用户提供的更新效果图。
-- `width`：窗口宽度，占可用窗口宽度的百分比，例如 `"50"` 表示 50%。
-- `height`：`"auto"` 时按内容自适应；数字或数字字符串按可用窗口高度的百分比计算。
-- `title`：头部白色标题；`desc`：标题下方的红色更新说明；`version`、`time` 分别显示版本号和更新时间。
+- 弹窗由 Android 原生视图绘制，使用用户提供的 `bg.png` 作为头部背景；常规标题栏相对上一版缩短约 20%，背景图允许拉伸填充，长标题仍可扩展头部以完整显示。窗口白底、圆角按 Android 15dp 适配。
+- `width`：纯数字或数字字符串直接表示 Android dp，例如 `50` 或 `"50"` 为 50dp；`"50%"` 才表示完整窗口宽度的 50%。不额外乘缩放系数。
+- `height`：与宽度同规则，纯数字为 dp，带 `%` 才是完整窗口高度百分比；`"auto"` 时不指定固定高度，按内容自适应。
+- `title`：头部白色标题；`desc`：标题下方的红色更新说明；`version`、`time` 在同一行分别显示“最新版本：”和“更新时间：”，两项间隔 15 物理像素，空间不足时可换行。`version` 为空但 `time` 有值时显示“最新版本：未提供”；准确目标版本须由服务端提供，不从当前安装包版本推断。
 - 弹窗下方遮罩为 `#000000`，透明度 45%。绿色圆角按钮文案为“立即更新”。
-- `force=1` 时不显示下方圆形关闭按钮，且正常状态下不可通过返回键关闭；`force=0` 时可关闭并继续启动。
-- 点击遮罩不关闭；内容过长时在面板内部滚动，关闭控件保留在屏幕内。`title/time/desc/version` 允许空字符串，对应文案为空时隐藏。
+- `force=1` 时不显示下方圆形关闭按钮，且正常状态下不可通过返回键关闭；`force=0` 时可关闭并继续启动。关闭按钮在翻倍后的尺寸基础上宽高各缩小 20%，最小约 35dp × 35dp，纯黑 `#000000` 背景、白色图标；主按钮高度在上一版基础上增加 10 物理像素，按钮下方留白减少约一半。
+- 点击遮罩不关闭；内容过长时在面板内部滚动，关闭控件保留在屏幕内。`title/time/desc/version` 允许空字符串；标题、说明和时间为空时对应文案隐藏，版本与时间均为空时整行隐藏。
 
 ### 8.2 更新处理与容错
 
@@ -472,11 +475,17 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 - 本地存储：`saveLocalStorage`、`getLocalStorage`。
 - 第三方应用：`isAppInstalled`、`openApp`，均接收 `{packageName}`，通过统一异步回调的 `data` 返回布尔值。检测可见且已安装的包为 `true`，未安装或系统不可见为 `false`；打开采用系统提供的包启动入口，系统接受启动请求为 `true`，未安装、无入口或系统拒绝为 `false`。参数无效返回 `code:1001,data:false`，其他异常返回 `code:9999,data:false`。
 - 第三方应用能力仅供已注入 Bridge 的可信页面调用；打开应由 H5 按钮点击触发，不自动下载、安装或跳转商店。Android 11+ 声明 MAIN/LAUNCHER 包查询和 `com.me74.qsmhz`，不使用 `QUERY_ALL_PACKAGES`；其他无桌面入口的目标包须在 Manifest 的 `queries` 中显式添加后重新出包，不能保证任意隐藏包的检测准确性。应用安装信息的使用应纳入隐私披露，H5 不应批量枚举包名。
-- 悬浮球与窗口：`setFloatingBall`、`openMiniWindow`、`closeMiniWindow`、`changeGameUrl`、`closePage`。
+- 悬浮球与窗口：`setFloatingBall`、`openMiniWindow`、`closeMiniWindow`、`closeWelfarepage`、`changeGameUrl`、`closePage`。
 
 各方法的参数、回调和返回码见 [JSBridge 方法清单](JSBridge方法清单_jsbridge.md)。业务规则以本文为准；Bridge 签名、回调协议及错误码仍需 Android 与 H5 联调确认。
 
-### 9.1 应用私有本地存储
+### 9.1 H5 视口适配
+
+- Native 在实际方向和宿主尺寸稳定后，统一重排所有仍打开的 H5 WebView；同方向请求也按当前宿主尺寸完成布局。切换后新打开的 H5 页面和 `changeGameUrl` 加载的新文档直接按当前实际方向渲染。
+- H5 不依赖私有方向通知，应监听标准 `window.resize`；可结合 `visualViewport.resize` 和 `ResizeObserver`，按最新 `window.innerWidth`、`window.innerHeight` 重算游戏画布、rem、WebGL 或横竖屏组件布局。Vue2 示例见 `示例/vue2-jsbridge-demo.html`。
+- 页面销毁时应移除事件监听并断开 `ResizeObserver`，防止重复注册。
+
+### 9.2 应用私有本地存储
 
 - `saveLocalStorage`、`getLocalStorage` 允许所有 SDK 注入 Bridge 的可信 H5 页面调用，包括协议页、登录页、福利页、游戏页等，不要求已登录或已同意隐私协议；来源信任沿用 SDK 既有规则。
 - 所有可信页面共享同一份应用内键值数据，不按域名、WebView 实例或账号隔离。使用独立的应用私有持久化存储，与浏览器 `window.localStorage` 独立；应用重启后仍保留，退出登录不会清除，卸载应用后由 Android 清除。
@@ -506,7 +515,7 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 | `deviceType` | 客户端类型，本期固定 `android`；HTTP Header 为 `Devicetype` |
 | `accountToken` | 安全存储的登录凭证；HTTP Header 为 `Accountoken` |
 | `notchScreen` | 系统缺口检测结果，整数 `0` 或 `1`；HTTP Header 为 `Notchscreen` |
-| `screenMode` | 当前应用方向，横屏为 `horizontal`、竖屏为 `vertical`；HTTP Header 为 `Screenmode` |
+| `screenMode` | 当前业务方向，初始取出包方向，之后随 `changeScreenmode` 或打开福利大厅选择横屏而更新；HTTP Header 为 `Screenmode` |
 | 初始化接口地址 | SDK 内硬编码为 `https://box.74meng.com/h5_app/init`，不是初始化响应字段 |
 
 ## 12. 待确认问题

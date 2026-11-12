@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Message
 import android.view.Gravity
 import android.view.View
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -37,6 +38,17 @@ class WebContainer(
     private val pageSpecs = pages.toMutableMap()
     private val instances = linkedMapOf<String, WebInstance>()
     private val pendingPopups = mutableMapOf<WebView, MutableSet<WebView>>()
+    private val pendingGameNavigation = PendingGameNavigation()
+    private var pendingRelayoutListener: ViewTreeObserver.OnPreDrawListener? = null
+    private val hostLayoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+        if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
+            relayoutAll()
+        }
+    }
+
+    init {
+        host.addOnLayoutChangeListener(hostLayoutListener)
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun open(spec: PageSpec, operational: Boolean = false): WebInstance? {
@@ -181,9 +193,28 @@ class WebContainer(
     fun openInstance(instanceName: String): WebInstance? =
         pageSpecs.values.firstOrNull { it.instance == instanceName }?.let(::open)
 
-    fun changeGameUrl(url: String, callback: (Boolean) -> Unit = {}): Boolean {
+    fun changeGameUrl(
+        url: String,
+        waitCloseWelfarepage: Boolean = false,
+        callback: (Boolean) -> Unit = {}
+    ): Boolean {
         val gameSpec = pageSpecs["game"] ?: return false
         if (!UrlPolicy.isAllowedGameUrl(url, gameSpec.url)) return false
+        if (waitCloseWelfarepage) {
+            pendingGameNavigation.defer(url)
+            callback(true)
+            return true
+        }
+        pendingGameNavigation.clear()
+        return loadGameUrl(url, callback)
+    }
+
+    fun takePendingGameUrl(): String? = pendingGameNavigation.take()
+
+    fun clearPendingGameUrl() = pendingGameNavigation.clear()
+
+    private fun loadGameUrl(url: String, callback: (Boolean) -> Unit): Boolean {
+        val gameSpec = pageSpecs["game"] ?: return false
         val existing = instances[gameSpec.instance]
         if (existing != null) {
             existing.pageView.load(url)
@@ -233,6 +264,36 @@ class WebContainer(
     fun get(instanceName: String): WebInstance? = instances[instanceName]
 
     fun instances(): List<WebInstance> = registry.order().mapNotNull(instances::get)
+
+    fun relayoutAll() {
+        instances.values.forEach { instance ->
+            instance.pageView.layoutParams = createLayoutParams(instance.spec)
+        }
+    }
+
+    fun relayoutAll(onComplete: () -> Unit) {
+        relayoutAll()
+        if (!host.isAttachedToWindow || !host.viewTreeObserver.isAlive) {
+            host.post(onComplete)
+            return
+        }
+        val observer = host.viewTreeObserver
+        pendingRelayoutListener?.let { previous ->
+            if (observer.isAlive) observer.removeOnPreDrawListener(previous)
+        }
+        val listener = object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if (host.viewTreeObserver.isAlive) host.viewTreeObserver.removeOnPreDrawListener(this)
+                if (pendingRelayoutListener === this) pendingRelayoutListener = null
+                onComplete()
+                return true
+            }
+        }
+        pendingRelayoutListener = listener
+        observer.addOnPreDrawListener(listener)
+        host.requestLayout()
+        host.invalidate()
+    }
 
     private fun createLayoutParams(spec: PageSpec): FrameLayout.LayoutParams {
         val density = activity.resources.displayMetrics.density

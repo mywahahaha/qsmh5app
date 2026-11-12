@@ -6,6 +6,8 @@ var vm = require('node:vm');
 
 var bridgeCallback;
 var screenModeParams;
+var closeWelfareParams;
+var changeGameUrlParams;
 var context = {
   QSMH5APP: {
     getGameInfo: function (params, callback) {
@@ -13,6 +15,14 @@ var context = {
     },
     changeScreenmode: function (params, callback) {
       screenModeParams = params;
+      callback({ code: 0, data: true });
+    },
+    closeWelfarepage: function (params, callback) {
+      closeWelfareParams = params;
+      callback({ code: 0, data: true });
+    },
+    changeGameUrl: function (params, callback) {
+      changeGameUrlParams = params;
       callback({ code: 0, data: true });
     }
   },
@@ -74,6 +84,24 @@ async function run() {
 
   assert.equal(await context.GameBridge.changeScreenmode('vertical'), true);
   assert.deepEqual(JSON.parse(JSON.stringify(screenModeParams)), { mode: 'vertical' });
+
+  assert.equal(await context.GameBridge.closeWelfarepage('vertical'), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(closeWelfareParams)), {
+    mode: 'vertical',
+    loadPendingGameUrl: false
+  });
+
+  assert.equal(await context.GameBridge.changeGameUrl('https://box.74meng.com/game', true), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(changeGameUrlParams)), {
+    url: 'https://box.74meng.com/game',
+    waitCloseWelfarepage: true
+  });
+
+  assert.equal(await context.GameBridge.closeWelfarepage('horizontal', true), true);
+  assert.deepEqual(JSON.parse(JSON.stringify(closeWelfareParams)), {
+    mode: 'horizontal',
+    loadPendingGameUrl: true
+  });
 
   var thirdPartyConfig = { url: 'https://tracking.example/collect', headers: {} };
   assert.equal(await axios.interceptors.request.fulfilled(thirdPartyConfig), thirdPartyConfig);

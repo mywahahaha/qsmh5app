@@ -20,14 +20,18 @@ class ScreenModeController(
     private val currentOrientation: () -> Int,
     private val requestOrientation: (Int) -> Unit
 ) {
-    private var pendingMode: ScreenMode? = null
+    private var selectedMode: ScreenMode? = null
 
+    @Synchronized
+    fun currentMode(): ScreenMode = selectedMode
+        ?: ScreenMode.fromConfiguration(currentOrientation()).also { selectedMode = it }
+
+    @Synchronized
     fun change(value: Any?): Boolean {
         val target = ScreenMode.fromValue(value)
-        val current = ScreenMode.fromConfiguration(currentOrientation())
-        if (current != target || pendingMode?.let { it != target } == true) {
+        if (currentMode() != target) {
             requestOrientation(target.requestedOrientation)
-            pendingMode = target
+            selectedMode = target
         }
         return true
     }

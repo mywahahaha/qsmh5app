@@ -27,6 +27,32 @@ class ScreenModeControllerTest {
     }
 
     @Test
+    fun reportsChangedModeBeforeSystemConfigurationCatchesUp() {
+        val controller = ScreenModeController(
+            currentOrientation = { Configuration.ORIENTATION_PORTRAIT },
+            requestOrientation = {}
+        )
+
+        assertTrue(controller.change("horizontal"))
+
+        assertEquals(ScreenMode.HORIZONTAL, controller.currentMode())
+    }
+
+    @Test
+    fun keepsReportedModeWhenOnlySystemConfigurationChanges() {
+        var orientation = Configuration.ORIENTATION_PORTRAIT
+        val controller = ScreenModeController(
+            currentOrientation = { orientation },
+            requestOrientation = {}
+        )
+        assertEquals(ScreenMode.VERTICAL, controller.currentMode())
+
+        orientation = Configuration.ORIENTATION_LANDSCAPE
+
+        assertEquals(ScreenMode.VERTICAL, controller.currentMode())
+    }
+
+    @Test
     fun changesHorizontalApplicationToVertical() {
         val requested = mutableListOf<Int>()
         val controller = ScreenModeController(

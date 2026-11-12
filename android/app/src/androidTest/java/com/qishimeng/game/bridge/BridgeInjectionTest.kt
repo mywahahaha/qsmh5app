@@ -2,6 +2,7 @@ package com.qishimeng.game.bridge
 
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.webkit.WebView
 import android.webkit.JavascriptInterface
 import android.util.Log
@@ -517,6 +518,28 @@ class BridgeInjectionTest {
         await(view, "window.openResult != null")
         assertEquals("0", evaluate(view, "window.openResult.code"))
         onMain { assertNotNull(container.get("web_login")) }
+    }
+
+    @Test fun closeWelfarepageClosesOnlyWelfareAndSoftlyHandlesMode() {
+        val game = open("game")
+        val invalidWelfare = open("welfare")
+        onMain { activityRule.activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+        evaluate(invalidWelfare, "QSMH5APP.closeWelfarepage({mode:'diagonal'},function(r){window.closeResult=r;});")
+        await(invalidWelfare, "window.closeResult != null")
+        onMain {
+            assertNull(container.get("web_welfare"))
+            assertSame(game, container.get("web_game")!!.webView)
+            assertEquals(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, activityRule.activity.requestedOrientation)
+        }
+
+        val validWelfare = open("welfare")
+        evaluate(validWelfare, "QSMH5APP.closeWelfarepage({mode:'vertical'},function(r){window.closeResult=r;});")
+        await(validWelfare, "window.closeResult != null")
+        onMain {
+            assertNull(container.get("web_welfare"))
+            assertSame(game, container.get("web_game")!!.webView)
+            assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, activityRule.activity.requestedOrientation)
+        }
     }
 
     @Test fun unconfiguredPageDoesNotReceiveBridge() {

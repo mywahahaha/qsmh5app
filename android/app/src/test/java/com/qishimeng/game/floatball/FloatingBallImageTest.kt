@@ -105,6 +105,7 @@ class FloatingBallImageTest {
         assertFalse("后台返回时不能让隐藏图标恢复播放", gif.isRunning)
         ball.show(true)
         assertSame(gif, image.drawable)
+        await { gif.isRunning }
         assertTrue("重新显示时恢复动画", gif.isRunning)
         ball.destroy()
         assertFalse("销毁后停止动画", gif.isRunning)

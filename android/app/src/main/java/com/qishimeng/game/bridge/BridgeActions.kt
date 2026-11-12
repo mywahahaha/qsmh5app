@@ -26,7 +26,21 @@ class BridgeActions(
     private val onLogout: () -> Unit,
     private val onPrivacyRejected: () -> Unit,
     private val onPhoneLoginFallback: () -> Unit,
-    private val changeScreenMode: (Any?) -> Boolean
+    private val changeScreenMode: (Any?) -> Boolean,
+    private val openMiniWindow: (String) -> Boolean = { webContainer.openInstance(it) != null },
+    private val cancelPendingWelfareOpen: () -> Unit = {},
+    private val changeGameUrl: (String, Boolean) -> Boolean = webContainer::changeGameUrl,
+    private val closeWelfarePageAction: (Any?, Boolean) -> Boolean = { mode, loadPendingGameUrl ->
+        val pendingUrl = if (loadPendingGameUrl) webContainer.takePendingGameUrl()
+        else null.also { webContainer.clearPendingGameUrl() }
+        val closed = closeWelfarePage(
+            mode,
+            close = { webContainer.close("web_welfare") },
+            changeScreenMode = changeScreenMode
+        )
+        pendingUrl?.let { webContainer.changeGameUrl(it) }
+        closed
+    }
 ) {
     // 第二个参数由 JS 执行完成后调用，避免先销毁登录 WebView 导致成功回调丢失。
     fun dispatch(method: String, args: Any?, completion: (BridgeResult, () -> Unit) -> Unit) {
@@ -77,6 +91,7 @@ class BridgeActions(
     fun dispatchSync(method: String, arguments: Any?): BridgeResult = try {
         @Suppress("UNCHECKED_CAST")
         val args = arguments as? Map<String, Any?> ?: emptyMap()
+        if (shouldCancelPendingWelfareOpen(method, args, currentInstance)) cancelPendingWelfareOpen()
         when (method) {
             "agreePrivacyPolicy" -> {
                 privacyStore.agree()
@@ -110,11 +125,19 @@ class BridgeActions(
                 BridgeResult(0, "ok", gameId?.let(roleStore::get) ?: false)
             }
             "setFloatingBall" -> BridgeResult(0, "ok", setFloatingBall(args.boolean("show"), args.boolean("active")))
-            "openMiniWindow" -> BridgeResult(0, "ok", webContainer.openInstance(args.string("page")) != null)
-            "closeMiniWindow" -> BridgeResult(0, "ok", webContainer.close(args.string("page")))
-            "changeGameUrl" -> BridgeResult(0, "ok", webContainer.changeGameUrl(args.string("url")))
-            "closePage" -> BridgeResult(0, "ok", webContainer.close(currentInstance))
+            "openMiniWindow" -> BridgeResult(0, "ok", openMiniWindow(args.string("page")))
+            "closeMiniWindow" -> BridgeResult(0, "ok", closeWindow(args.string("page")))
+            "closeWelfarepage" -> BridgeResult(0, "ok", closeWelfarePageAction(
+                args["mode"],
+                welfareCloseLoadsPendingGameUrl(args["loadPendingGameUrl"])
+            ))
+            "changeGameUrl" -> BridgeResult(0, "ok", changeGameUrl(
+                args.string("url"),
+                args.optionalBoolean("waitCloseWelfarepage")
+            ))
+            "closePage" -> BridgeResult(0, "ok", closeWindow(currentInstance))
             "logout" -> {
+                webContainer.clearPendingGameUrl()
                 tokenStore.token = null
                 onLogout()
                 BridgeResult(0, "ok", true)
@@ -146,4 +169,43 @@ class BridgeActions(
     private fun Map<String, Any?>.boolean(name: String): Boolean = this[name] as? Boolean
         ?: throw IllegalArgumentException("$name 参数无效")
 
+    private fun Map<String, Any?>.optionalBoolean(name: String): Boolean = when (val value = this[name]) {
+        null -> false
+        is Boolean -> value
+        else -> throw IllegalArgumentException("$name 参数无效")
+    }
+
+    private fun closeWindow(instance: String): Boolean {
+        if (instance == "web_welfare") webContainer.clearPendingGameUrl()
+        return webContainer.close(instance)
+    }
+
+}
+
+internal fun welfareCloseLoadsPendingGameUrl(value: Any?): Boolean = when (value) {
+    null -> false
+    is Boolean -> value
+    else -> throw IllegalArgumentException("loadPendingGameUrl 参数无效")
+}
+
+internal fun closeWelfarePage(
+    mode: Any?,
+    close: () -> Boolean,
+    changeScreenMode: (Any?) -> Boolean
+): Boolean {
+    val closed = close()
+    if (mode == "horizontal" || mode == "vertical") changeScreenMode(mode)
+    return closed
+}
+
+internal fun shouldCancelPendingWelfareOpen(
+    method: String,
+    args: Map<String, Any?>,
+    currentInstance: String
+): Boolean = when (method) {
+    "closeWelfarepage", "logout" -> true
+    "closeMiniWindow" -> args["page"] == "web_welfare"
+    "closePage" -> currentInstance == "web_welfare"
+    "changeScreenmode" -> args["mode"] == "vertical"
+    else -> false
 }

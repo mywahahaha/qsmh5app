@@ -3,8 +3,8 @@
 ## 文档信息
 
 - 项目：qishimeng_h5_sdk
-- 文档版本：v0.18
-- 更新日期：2026-11-10
+- 文档版本：v0.20
+- 更新日期：2026-11-12
 - 状态：业务规则已对齐需求文档；Bridge 签名仍需 Android/H5 联调确认
 
 ## 1. 概述与通用约定
@@ -77,6 +77,7 @@ QSMH5APP.getAccountToken({}, function (result) {
 | `setFloatingBall` | H5 → 原生 | 悬浮球 | 设置悬浮球状态（样式与显隐） |
 | `openMiniWindow` | H5 → 原生 | 小窗口 | 打开指定 H5 页面窗口（按实例名） |
 | `closeMiniWindow` | H5 → 原生 | 小窗口 | 关闭指定实例窗口 |
+| `closeWelfarepage` | H5 → 原生 | 福利大厅 | 关闭 `web_welfare`，可在关闭后切换屏幕方向 |
 | `changeGameUrl` | H5 → 原生 | 游戏页面 | 更换 `web_game` 地址并置顶 |
 | `closePage` | H5 → 原生 | 页面 | 关闭当前窗口 |
 
@@ -184,7 +185,7 @@ QSMH5APP.logout({}, function (result) {
   - `deviceType`：客户端类型，Android 返回 `android`，iOS 返回 `ios`。
   - `deviceCode`：设备码；未同意隐私协议时为空字符串。
   - `notchScreen`：原生系统报告有刘海或挖孔时为整数 `1`，否则为 `0`；H5 据此调整页面内容布局，Android 游戏 WebView 本身覆盖完整屏幕。
-  - `screenMode`：当前应用方向，横屏为 `horizontal`，竖屏为 `vertical`。
+  - `screenMode`：当前业务方向，横屏为 `horizontal`，竖屏为 `vertical`。Android 初始值取出包方向，成功调用 `changeScreenmode` 后立即使用新值。打开福利大厅时 Android 会先把业务方向同步为 `horizontal`，因此后续 `getGameInfo.data.screenMode` 和原生请求 Header `Screenmode` 都返回 `horizontal`。
 
 ```js
 QSMH5APP.getGameInfo({}, function (result) {
@@ -196,7 +197,7 @@ QSMH5APP.getGameInfo({}, function (result) {
 
 #### `changeScreenmode`
 
-- 说明：将当前应用强制切换为横屏或竖屏。当前方向已经等于目标方向时不重复执行切换，仍返回成功。
+- 说明：将当前应用强制切换为横屏或竖屏，并更新 `getGameInfo.data.screenMode` 与原生请求 Header `Screenmode` 使用的业务方向。当前业务方向已经等于目标方向时不重复执行切换，仍返回成功。Android 在方法成功后立即对后续 Bridge 与原生请求使用新值，不等待系统旋转动画或配置切换结束。
 - 参数：`mode` 必填；横屏传 `horizontal`，竖屏传 `vertical`。
 - 成功返回：`{code:0,msg:"ok",data:true}`。
 - 参数缺失、类型错误或值不在上述两项中时均返回 `code:1001,msg:"参数无效"`；Android 的 `data` 为 `null`，iOS 的 `data` 为 `false`。
@@ -257,7 +258,7 @@ QSMH5APP.getGameRole({ gameId: 266 }, function (result) {
 
 原生按图标状态变化更新图像：如果悬浮球已存在且目标图标与当前图标相同，不重新加载图标，避免闪动。只改变显隐时也不重载图标。宽高和位置由初始化 `floatball` 配置提供；H5 调用此方法不改变尺寸或位置。
 
-Android 与 iOS 均已实现此方法，H5 不需要按客户端分支调用。`show/active` 必须为布尔值；成功返回 `code=0,data=true`，缺少初始化悬浮球配置返回 `code=0,data=false`，iOS 参数无效返回 `1001,data=false`。福利在游戏后方时不影响球；福利置顶才临时隐藏，游戏置顶或福利关闭后按最近一次有效 Bridge/心跳状态恢复。心跳字段名为 `data.floating_ball`，初始化字段名仍为 `data.floatball`。
+Android 与 iOS 均已实现此方法，H5 不需要按客户端分支调用。`show/active` 必须为布尔值；成功返回 `code=0,data=true`，缺少初始化悬浮球配置返回 `code=0,data=false`，iOS 参数无效返回 `1001,data=false`。福利在游戏后方时不影响球；福利置顶才临时隐藏，游戏置顶或福利关闭后按最近一次有效 Bridge/心跳状态恢复。Android 打开福利大厅时统一选择横屏业务方向；原本已经横屏时不重复请求系统旋转。关闭大厅不会自动恢复旧方向，需要 H5 显式调用 `closeWelfarepage`。心跳字段名为 `data.floating_ball`，初始化字段名仍为 `data.floatball`。
 
 iOS 宽高及绝对垂直距离采用 pt，水平偏移沿用 360 宽设计基准，悬浮容器为 safeArea；容器尺寸变化按初始化配置重新布局，当前会话普通显隐变化保留拖动位置。详见 [iOS悬浮球对齐记录](docs/iOS悬浮球需求与实现_ios-floating-ball.md)。
 
@@ -271,7 +272,7 @@ QSMH5APP.setFloatingBall({ show: true, active: false }, function (result) {
 
 #### `openMiniWindow`
 
-- 说明：打开指定 H5 页面窗口。初始化配置中会列出多个 H5 页面，每个页面有窗口实例名称（如 `web_login`、`web_agreement`、`web_welfare`），本接口按实例名称打开对应窗口，并在最顶层显示。同名实例已存在时直接置顶。游戏中打开福利大厅 `web_welfare` 时保留游戏实例和当前文档状态，不关闭或重建游戏。
+- 说明：打开指定 H5 页面窗口。初始化配置中会列出多个 H5 页面，每个页面有窗口实例名称（如 `web_login`、`web_agreement`、`web_welfare`），本接口按实例名称打开对应窗口，并在最顶层显示。同名实例已存在时直接置顶。Android 打开 `web_welfare` 时与点击悬浮球使用同一流程：先将业务方向同步为 `horizontal`；物理方向尚未横屏时等待宿主按横屏完成非零布局，再创建或置顶大厅。游戏实例及当前文档状态保留，不关闭或重建。
 - 参数：
   - `page`：窗口实例名称，必填，例如 `web_welfare`。
 - 返回：`Result`。
@@ -284,7 +285,7 @@ QSMH5APP.openMiniWindow({ page: "web_welfare" }, function (result) {
 
 #### `closeMiniWindow`
 
-- 说明：关闭指定实例的窗口。
+- 说明：关闭指定实例的窗口，只处理页面关闭，不切换屏幕方向。关闭 `web_welfare` 后也不会自动恢复进入大厅前的方向。
 - 参数：
   - `page`：窗口实例名称，必填，例如 `web_welfare`。
 - 返回：`Result`。
@@ -295,18 +296,51 @@ QSMH5APP.closeMiniWindow({ page: "web_welfare" }, function (result) {
 });
 ```
 
+#### `closeWelfarepage`
+
+- 说明：Android 关闭福利大厅专用接口，固定关闭 `web_welfare`。先关闭页面，再按合法 `mode` 请求屏幕方向切换；方向和宿主布局稳定后，可选择加载此前由 `changeGameUrl` 延迟保存的游戏地址。
+- 参数：
+  - `mode`：可传 `horizontal` 或 `vertical`。缺失、非字符串或其他值时仍正常关闭大厅，但不切换方向，也不返回参数错误。
+  - `loadPendingGameUrl`：可选布尔值，默认 `false`。`false` 表示纯关闭并清除历史待加载地址，不重载游戏；`true` 表示在方向和宿主布局稳定后一次性消费待加载地址。没有待加载地址时不得重载当前游戏。
+- 返回：`Result.data` 为大厅是否实际关闭成功。方向切换结果不改变本次关闭结果。
+- 注意：本方法名大小写固定为 `closeWelfarepage`。`closePage` 或 `closeMiniWindow` 只关闭 H5，不旋转、不加载待加载地址，并会清除大厅关联的历史待加载地址。
+
+```js
+QSMH5APP.closeWelfarepage({
+  mode: "vertical",
+  loadPendingGameUrl: false
+}, function (result) {
+  if (result.code === 0 && result.data === true) {
+    // web_welfare 已关闭；原生随后请求竖屏，不重载游戏。
+  }
+});
+```
+
 #### `changeGameUrl`
 
-- 说明：将游戏实例 `web_game` 导航到指定 URL，并切换到最前端。URL 必须是有效的绝对 HTTP/HTTPS 地址，且主机名与初始化配置 `h5Pages.game.url` 的主机名精确匹配；不自动允许子域，也不使用 `jumpDomain` 校验。若 `web_game` 已存在，则在该实例中导航到新 URL 并置顶；若不存在，则创建实例、加载该 URL 并置顶。
-- 大厅调用时：直接使用现有游戏 WebView 加载新地址，不关闭、销毁或重新创建游戏实例；福利大厅保留在游戏后方。新地址会加载新文档，旧页面的 JS 状态随导航结束；游戏置顶后恢复运行时悬浮球状态，再打开大厅时复用原大厅实例。
-- 参数：`url`（非空字符串，必填）。
+- 说明：设置游戏实例 `web_game` 的目标 URL。URL 必须是有效的绝对 HTTP/HTTPS 地址，且主机名与初始化配置 `h5Pages.game.url` 的主机名精确匹配；不自动允许子域，也不使用 `jumpDomain` 校验。
+- 参数：
+  - `url`：非空字符串，必填。
+  - `waitCloseWelfarepage`：可选布尔值，默认 `false`。`false` 会清除旧的待加载地址，立即在现有游戏 WebView 中导航并置顶；游戏实例不存在时创建后加载。`true` 只覆盖保存单槽待加载地址，不立即导航、不置顶游戏、不显示悬浮球，等待 `closeWelfarepage({loadPendingGameUrl:true})` 消费。
 - 返回：`Result`，`data` 为布尔值。地址校验通过且原生已接受导航/创建请求时为 `true`；参数、地址校验或原生导航操作失败时为 `false`。`true` 仅表示导航已被接受，不代表远端页面已加载成功。
 
 ```js
-QSMH5APP.changeGameUrl({ url: "https://box.74meng.com/h5?gid=266" }, function (result) {
+QSMH5APP.changeGameUrl({
+  url: "https://box.74meng.com/h5?gid=266",
+  waitCloseWelfarepage: false
+}, function (result) {
   if (result.code === 0 && result.data === true) {
     // 原生已接受导航并将 web_game 置顶
   }
+});
+```
+
+福利大厅进入新游戏时，必须先保存待加载地址，再关闭大厅并明确消费：
+
+```js
+GameBridge.changeGameUrl(url, true).then(function (accepted) {
+  if (!accepted) return false;
+  return GameBridge.closeWelfarepage(targetMode, true);
 });
 ```
 
@@ -314,7 +348,7 @@ QSMH5APP.changeGameUrl({ url: "https://box.74meng.com/h5?gid=266" }, function (r
 
 #### `closePage`
 
-- 说明：关闭当前窗口。
+- 说明：关闭当前窗口，只处理页面关闭，不切换屏幕方向。福利大厅需要关闭后切方向时使用 `closeWelfarepage`。
 - 参数：无。
 - 返回：`Result`。
 
@@ -420,42 +454,30 @@ document.getElementById("open-game").addEventListener("click", function () {
 - 仅在业务需要时查询指定包，按分发平台政策最小化查询范围，并在隐私政策中披露用途，不进行全量应用枚举。
 - 示例脚本另提供 `GameBridge.isAppInstalled(packageName)`、`GameBridge.openApp(packageName)`，Promise 成功直接得到布尔值，非零 `code` 则 reject。完整按钮示例见 `示例/vue2-jsbridge-demo.html`。
 
-## 4. 原生事件
+## 4. H5 屏幕适配
 
-### 4.1 事件监听
+Android 在实际方向和宿主尺寸稳定后，会按当前可见区域重新布局所有仍打开的 H5 WebView；方向切换后新打开的页面和 `changeGameUrl` 加载的新文档也按当前实际方向布局。Native 不发送私有方向通知。
 
-`QSMH5APP.on/off` 用于“原生主动通知 H5”，与前面“H5 主动调用原生”的方法互补。
-
-- 主动调用：H5 发起，回调只返回一次。
-- 事件监听：H5 注册，原生可多次、异步推送，直到 `off` 取消。
+H5 应依赖标准视口变化事件重新计算 Canvas、WebGL、rem 和横竖屏组件布局：
 
 ```js
-// 注册
-function onAccountTokenChanged(data) {
-  if (!data.accountToken) {
-    // token 已失效，做登出或跳登录处理
-  }
+function relayoutByViewport() {
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+  // 按 width / height 更新游戏引擎或页面布局。
 }
-QSMH5APP.on("onAccountTokenChanged", onAccountTokenChanged);
 
-// 取消，页面销毁时调用，避免重复回调
-QSMH5APP.off("onAccountTokenChanged", onAccountTokenChanged);
+window.addEventListener('resize', relayoutByViewport);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', relayoutByViewport);
+}
+var viewportObserver = window.ResizeObserver
+  ? new ResizeObserver(relayoutByViewport)
+  : null;
+if (viewportObserver) viewportObserver.observe(document.documentElement);
 ```
 
-适用场景：原生先发生变化、需要反向推给 H5 的情况，例如 token 过期/刷新、页面切后台或前台、窗口被覆盖等。后续可扩展悬浮球状态变化、更新下载进度等。
-
-注意事项：
-- 事件名需在桥接层统一约定并做参数校验。
-- 页面销毁、窗口关闭时必须调用 `off` 解绑，防止重复注册造成回调叠加或内存泄漏。
-
-### 4.2 事件清单
-
-当前需求中，原生主动通知 H5 的场景主要通过异步回调完成，暂无强制注册的全局事件。以下为预留事件，待确认后启用：
-
-| 事件名 | 触发时机 | 参数 |
-| --- | --- | --- |
-| `onAccountTokenChanged` | accountToken 变化 | `{ accountToken }` |
-| `onPageVisibleChanged` | 页面显隐变化 | `{ visible }` |
+页面销毁时应移除 `resize` 监听并断开 `ResizeObserver`。完整 Vue2 示例见 `示例/vue2-jsbridge-demo.html`。
 
 ## 5. 返回码定义
 
@@ -476,7 +498,7 @@ QSMH5APP.off("onAccountTokenChanged", onAccountTokenChanged);
 ## 6. 待确认问题
 
 - Android/H5 联调确认最终方法签名、参数字段、返回码和回调时机。
-- 确认原生主动事件清单是否需要页面生命周期类事件。
+- 确认 H5 页面均能响应标准 viewport 尺寸变化，不依赖私有方向通知。
 
 ## 7. iOS首期实现补充
 
@@ -489,7 +511,7 @@ QSMH5APP.off("onAccountTokenChanged", onAccountTokenChanged);
 - 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、changeGameUrl、changeScreenmode 及通用存储。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
 - `requestPhoneLogin` 在关闭时返回 `3003`；开启但方案/SDK/宿主不可用时返回 `3001` 并保留/恢复 H5。展示成功只回一次 `code=0,data=true`，兑换成功由原生独立处理，不再次回调原请求。
 - 已支持 `setFloatingBall` 的显隐/激活、纵向拖动、点击福利窗口、福利覆盖后恢复，以及心跳 `floating_ball` 同步；心跳运营窗口清单 `popup_pages` 尚未接入。
-- 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理；`on/off` 在两端均为空实现，当前不发送预留事件。
+- 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理。
 
 ### revokePrivacyPolicy（iOS）
 
@@ -553,14 +575,14 @@ else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
 | `logout` | `data=true`，保留隐私及通用存储 | 同语义，旧会话失效 | 通用；由原生继续登录流程 |
 | `saveLocalStorage` / `getLocalStorage` | 保存布尔结果、读取字符串 | 同结构；本次对齐 JS 中非字符串/数字值的归一化 | 通用；高精度、极大或极小数值建议先传字符串，避免两端原生数值格式差异 |
 | `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 本次对齐成功 `data=true`；只支持游戏阶段的 `web_game` / `web_welfare` | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
+| `closeWelfarepage` | 已实现；关闭大厅后按合法 `mode` 切方向，`loadPendingGameUrl=true` 时稳定后消费待加载地址 | 当前未纳入本轮 iOS 变更 | Android 可使用；纯关闭显式传 `false`，进入新游戏传 `true` |
 | `closePage` | 关闭当前实例，成功 `data=true` | 本次对齐成功 `data=true`；仅游戏/福利实例，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
-| `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | 使用与配置同 origin 的 HTTPS URL 可共用；成功仅表示接受导航 |
+| `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机；支持立即加载或单槽延迟加载 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | Android 大厅进入游戏先延迟保存，再由专用关闭消费；成功仅表示接受请求 |
 | `changeScreenmode` | 已实现横竖屏强制切换和幂等成功返回 | 已实现横竖屏强制切换和幂等成功返回 | 参数只接受 `horizontal` / `vertical` |
 | `setFloatingBall` | 已实现，福利置顶临时隐藏 | 已实现，同显隐/激活及恢复规则 | 调用通用；传布尔 `show/active`，缺初始化配置时 `code=0,data=false` |
 | `saveGameRole` / `getGameRole` | 已实现 | 尚未实现，返回非零错误 | 当前按 `deviceType` 隐藏 iOS 相关入口或提供 H5 自身降级 |
 | `isAppInstalled` / `openApp` | 接受安卓包名，受系统可见性限制 | 尚未实现，返回非零错误 | 当前仅 Android 使用；不能把安卓包名直接用于 iOS |
 | `revokePrivacyPolicy` | 当前注入器没有此方法 | 已实现原生确认和清理 | iOS 专属；先判断方法存在再调用 |
-| `on` / `off` | 空实现 | 空实现 | 不依赖 Token/生命周期预留事件；`QSMH5APPReady` 是 window 事件，独立有效 |
 
 iOS 即使尚未实现某项业务，也可能保留同名函数并回非零 `code`，因此仅用 `typeof QSMH5APP.saveGameRole === 'function'` 不能判断功能已可用。未知/未实现能力的错误码目前两端也不完全相同，统一以非零失败处理；不要将 `data=false` 一概当作业务不存在或应用未安装。
 

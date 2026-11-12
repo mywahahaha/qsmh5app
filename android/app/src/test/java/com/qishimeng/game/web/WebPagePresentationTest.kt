@@ -129,6 +129,20 @@ class WebPagePresentationTest {
         assertEquals(0, contentReadyCount)
     }
 
+    @Test fun fullscreenWindowTracksHostSizeAfterRotation() {
+        val portrait = welfare.pageView.layoutParams as FrameLayout.LayoutParams
+        assertEquals(600, portrait.width)
+        assertEquals(400, portrait.height)
+
+        host.layout(0, 0, 1_000, 500)
+
+        val landscape = welfare.pageView.layoutParams as FrameLayout.LayoutParams
+        assertEquals("横屏后全屏 H5 必须使用新的宿主宽度", 1_000, landscape.width)
+        assertEquals("横屏后全屏 H5 必须使用新的宿主高度", 500, landscape.height)
+        assertEquals(0, landscape.leftMargin)
+        assertEquals(0, landscape.topMargin)
+    }
+
     private fun assertTransparentLoading() {
         assertEquals("页面尚未准备好时不能用深色面板覆盖游戏", 0f, welfare.pageView.alpha, 0.001f)
         assertEquals("WebView 保持可布局与渲染，不能用 GONE 等待首帧", View.VISIBLE, welfare.webView.visibility)

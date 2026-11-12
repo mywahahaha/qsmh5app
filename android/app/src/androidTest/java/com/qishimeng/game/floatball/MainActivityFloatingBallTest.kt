@@ -4,12 +4,14 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.WebView
 import android.webkit.JavascriptInterface
 import android.widget.ImageView
+import android.widget.FrameLayout
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.matcher.ViewMatchers.withContentDescription
@@ -21,6 +23,7 @@ import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import com.qishimeng.game.MainActivity
 import com.qishimeng.game.auth.EncryptedAccountTokenStore
+import com.qishimeng.game.auth.GameInfo
 import com.qishimeng.game.auth.OnekeyAuthGateway
 import com.qishimeng.game.auth.OnekeyAuthResult
 import com.qishimeng.game.auth.OnekeyConfig
@@ -30,6 +33,7 @@ import com.qishimeng.game.bridge.SharedPreferencesLocalStorage
 import com.qishimeng.game.network.ApiClient
 import com.qishimeng.game.network.ApiResponse
 import com.qishimeng.game.network.ApiRequest
+import com.qishimeng.game.network.GameHeaders
 import com.qishimeng.game.network.HttpTransport
 import com.qishimeng.game.web.WebContainer
 import org.junit.After
@@ -133,6 +137,13 @@ class MainActivityFloatingBallTest {
 
     @Test fun loginAndLoadedGameShowBallAndBridgeWelfareAndLogoutControlIt() {
         launch()
+        onMain {
+            val expectedMode = if (android.os.Build.VERSION.SDK_INT >= 30)
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            assertEquals("WebView 宿主窗口必须允许绘制到刘海区域",
+                expectedMode, activityRule.activity.window.attributes.layoutInDisplayCutoutMode)
+        }
         val login = awaitWeb("login")
         onMain { assertNull("登录前不应创建悬浮球", ball()) }
         call(login, "notifyLoginSuccess", "{accountToken:'fixture-login-token'}")
@@ -287,7 +298,7 @@ class MainActivityFloatingBallTest {
         assertEquals(1, tokenRequests.get())
     }
 
-    @Test fun welfarePreservesGameAndChangingUrlReusesGameAndRestoresBall() {
+    @Test fun welfareDefersGameUrlUntilDedicatedCloseAndThenRestoresBall() {
         launchSavedTokenGame()
         val game = awaitWeb("game")
         onMain { game.evaluateJavascript("window.preservedGameState='alive'", null) }
@@ -302,12 +313,18 @@ class MainActivityFloatingBallTest {
         call(welfare, "openMiniWindow", "{page:'web_welfare'}")
         awaitJs(welfare, "window.bridgeResult && window.bridgeResult.data === true")
         onMain { assertSame(welfare, container().get("web_welfare")!!.webView) }
-        call(welfare, "changeGameUrl", "{url:'${url("next-game")}'}")
+        call(welfare, "changeGameUrl", "{url:'${url("next-game")}',waitCloseWelfarepage:true}")
         awaitJs(welfare, "window.bridgeResult && window.bridgeResult.data === true")
+        onMain {
+            assertSame("延迟切地址时大厅必须继续置顶", welfare, container().get("web_welfare")!!.webView)
+            assertEquals("延迟切地址时游戏页不能提前导航", "game", game.url?.substringAfterLast('/'))
+            assertFalse(ball()!!.isShown)
+        }
+        call(welfare, "closeWelfarepage", "{mode:'horizontal',loadPendingGameUrl:true}")
         val navigatedGame = awaitWeb("next-game")
         onMain {
             assertSame("大厅切游戏地址不能重建游戏 WebView", game, navigatedGame)
-            assertSame("切地址不能关闭或重建大厅", welfare, container().get("web_welfare")!!.webView)
+            assertFalse("专用关闭必须关闭大厅", container().hasWindow("web_welfare"))
             assertEquals("web_game", container().windowNames().last())
         }
         awaitJs(game, "typeof window.preservedGameState === 'undefined' && document.readyState === 'complete'")
@@ -319,6 +336,33 @@ class MainActivityFloatingBallTest {
             assertSame(game, container().get("web_game")!!.webView)
             assertEquals("web_welfare", container().windowNames().last())
             assertFalse(ball()!!.isShown)
+        }
+    }
+
+    @Test fun showingFloatingBallAgainReappliesInitializationPositionBeforeVisible() {
+        ballBottom = 80
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        val image = onMainValue { ball()!! }
+        val ballHost = onMainValue { image.parent as ViewGroup }
+        onMain {
+            image.layoutParams = (image.layoutParams as FrameLayout.LayoutParams).apply { topMargin = 0 }
+        }
+
+        call(game, "setFloatingBall", "{show:false,active:false}")
+        awaitMain("隐藏悬浮球") { !image.isShown }
+        call(game, "setFloatingBall", "{show:true,active:false}")
+        awaitMain("重新定位完成后才显示悬浮球") { image.isShown && image.top > 0 }
+
+        onMain {
+            val expectedTop = FloatingBallLayout.resolveTop(
+                null,
+                ballBottom.toDouble(),
+                ballHost.height,
+                image.height,
+                activityRule.activity.resources.displayMetrics.density
+            )
+            assertEquals(expectedTop, image.top)
         }
     }
 
@@ -465,6 +509,114 @@ class MainActivityFloatingBallTest {
         awaitMain("退出游戏后应恢复系统自动息屏策略") { !keepsScreenAwake() }
     }
 
+    @Test fun verticalGameOpeningWelfareSelectsHorizontalAndOnlyDedicatedCloseCanRestoreVertical() {
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitJs(game, "window.bridgeResult && window.bridgeResult.code === 0 && window.bridgeResult.data === true")
+        awaitMain("changeScreenmode 应将游戏切为竖屏") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+
+        call(game, "getGameInfo", "{}")
+        awaitJs(game, "window.bridgeResult && window.bridgeResult.data.screenMode === 'vertical'")
+        assertBusinessScreenMode("vertical")
+        onView(withContentDescription("游戏悬浮球")).perform(click())
+        val welfare = awaitWeb("welfare")
+        awaitMain("竖屏游戏点击悬浮球后应先切为横屏再显示大厅") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        awaitMain("横屏后的福利大厅必须铺满宿主窗口") {
+            val page = container().get("web_welfare")?.pageView ?: return@awaitMain false
+            val parent = page.parent as? ViewGroup ?: return@awaitMain false
+            parent.width > parent.height && parent.height > 0 &&
+                page.width == parent.width && page.height == parent.height
+        }
+        call(welfare, "getGameInfo", "{}")
+        awaitJs(welfare, "window.bridgeResult && window.bridgeResult.data.screenMode === 'horizontal'")
+        assertBusinessScreenMode("horizontal")
+
+        call(welfare, "closePage", "{}")
+        awaitMain("closePage 只关闭大厅，不能恢复竖屏") {
+            !container().hasWindow("web_welfare") &&
+                activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        call(game, "getGameInfo", "{}")
+        awaitJs(game, "window.bridgeResult && window.bridgeResult.data.screenMode === 'horizontal'")
+        assertBusinessScreenMode("horizontal")
+
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        awaitWeb("welfare")
+        call(game, "closeMiniWindow", "{page:'web_welfare'}")
+        awaitMain("closeMiniWindow 只关闭大厅，不能处理屏幕旋转") {
+            !container().hasWindow("web_welfare") &&
+                activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        val finalWelfare = awaitWeb("welfare")
+        call(finalWelfare, "closeWelfarepage", "{mode:'vertical'}")
+        awaitMain("closeWelfarepage(vertical) 应在关闭大厅后切回竖屏") {
+            !container().hasWindow("web_welfare") &&
+                activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+        call(game, "getGameInfo", "{}")
+        awaitJs(game, "window.bridgeResult && window.bridgeResult.data.screenMode === 'vertical'")
+        assertBusinessScreenMode("vertical")
+    }
+
+    @Test fun actualScreenChangesRelayoutAllOpenH5Pages() {
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        awaitWeb("welfare")
+
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitMain("应完成竖屏布局") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT &&
+                pageFillsCurrentHost("web_game", landscape = false) &&
+                pageFillsCurrentHost("web_welfare", landscape = false)
+        }
+        call(game, "changeScreenmode", "{mode:'horizontal'}")
+        awaitMain("应完成横屏布局") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                pageFillsCurrentHost("web_game", landscape = true) &&
+                pageFillsCurrentHost("web_welfare", landscape = true)
+        }
+        call(container().get("web_welfare")!!.webView, "closePage", "{}")
+        awaitMain("大厅应已关闭") { !container().hasWindow("web_welfare") }
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitMain("游戏页应按竖屏宿主重排") { pageFillsCurrentHost("web_game", landscape = false) }
+        call(game, "openMiniWindow", "{page:'web_login'}")
+        awaitWeb("login")
+        awaitMain("切屏后新打开的 H5 也必须按当前竖屏尺寸布局") {
+            pageFillsCurrentHost("web_login", landscape = false)
+        }
+    }
+
+    @Test fun pendingWelfareOpenCanBeCancelledBeforeRotationAndThenRequestedAgain() {
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitMain("测试前应进入竖屏") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        call(game, "closeWelfarepage", "{mode:'vertical'}")
+        awaitMain("立即关闭应取消待打开大厅且保持竖屏") {
+            !container().hasWindow("web_welfare") &&
+                activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+
+        call(game, "openMiniWindow", "{page:'web_welfare'}")
+        awaitWeb("welfare")
+        awaitMain("取消后的新请求仍应重新切横屏并铺满大厅") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                pageFillsCurrentHost("web_welfare", landscape = true)
+        }
+    }
+
     @Test fun logoutRestoresAutomaticScreenTimeout() {
         launchSavedTokenGame()
         onMain { assertTrue("进入游戏后应保持屏幕常亮", keepsScreenAwake()) }
@@ -485,6 +637,23 @@ class MainActivityFloatingBallTest {
 
     private fun keepsScreenAwake(): Boolean =
         activityRule.activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+
+    private fun assertBusinessScreenMode(expected: String) {
+        val info = onMainValue {
+            MainActivity::class.java.getDeclaredMethod("gameInfo").apply { isAccessible = true }
+                .invoke(activityRule.activity) as GameInfo
+        }
+        assertEquals(expected, info.screenMode)
+        assertEquals(expected, GameHeaders.toMap(info, true).getValue("Screenmode"))
+    }
+
+    private fun pageFillsCurrentHost(instance: String, landscape: Boolean): Boolean {
+        val page = container().get(instance)?.pageView ?: return false
+        val parent = page.parent as? ViewGroup ?: return false
+        val directionMatches = if (landscape) parent.width > parent.height else parent.height > parent.width
+        return directionMatches && parent.width > 0 && parent.height > 0 &&
+            page.width == parent.width && page.height == parent.height
+    }
 
     private fun assertBallInsideHost(image: ImageView, host: ViewGroup) {
         assertTrue("悬浮球必须完整位于可见区域内，实际球框=[${image.left},${image.top},${image.right},${image.bottom}]，窗口=${host.width}x${host.height}",

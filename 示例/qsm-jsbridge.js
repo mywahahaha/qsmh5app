@@ -98,6 +98,18 @@
     changeScreenmode: function (mode) {
       return callNativeBridge('changeScreenmode', { mode: mode });
     },
+    closeWelfarepage: function (mode, loadPendingGameUrl) {
+      return callNativeBridge('closeWelfarepage', {
+        mode: mode,
+        loadPendingGameUrl: loadPendingGameUrl === true
+      });
+    },
+    changeGameUrl: function (url, waitCloseWelfarepage) {
+      return callNativeBridge('changeGameUrl', {
+        url: url,
+        waitCloseWelfarepage: waitCloseWelfarepage === true
+      });
+    },
     isAppInstalled: function (packageName) {
       return callNativeBridge('isAppInstalled', { packageName: packageName });
     },

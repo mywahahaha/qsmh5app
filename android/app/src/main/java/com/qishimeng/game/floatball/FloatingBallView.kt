@@ -44,6 +44,8 @@ class FloatingBallView(
     }
     private var currentImageUrl: String? = null
     private var active = false
+    private var requestedVisible = false
+    private var showGeneration = 0
     private val hostLayoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
         if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
             image.layoutParams = createLayoutParams()
@@ -54,6 +56,7 @@ class FloatingBallView(
         image.contentDescription = "游戏悬浮球"
         image.scaleType = ImageView.ScaleType.FIT_CENTER
         image.setImageDrawable(null)
+        image.visibility = View.GONE
         image.setOnTouchListener(::onTouch)
         host.addView(image, createLayoutParams())
         host.addOnLayoutChangeListener(hostLayoutListener)
@@ -62,9 +65,23 @@ class FloatingBallView(
     }
 
     fun show(visible: Boolean) {
-        val visibility = if (visible) View.VISIBLE else View.GONE
-        if (image.visibility == visibility) return
-        image.visibility = visibility
+        requestedVisible = visible
+        val generation = ++showGeneration
+        if (!visible) {
+            image.visibility = View.GONE
+            updateAnimationVisibility()
+            return
+        }
+        if (image.visibility == View.VISIBLE) return
+        image.visibility = View.INVISIBLE
+        image.layoutParams = createLayoutParams()
+        host.requestLayout()
+        host.post {
+            if (!requestedVisible || generation != showGeneration) return@post
+            image.layoutParams = createLayoutParams()
+            image.visibility = View.VISIBLE
+            updateAnimationVisibility()
+        }
         updateAnimationVisibility()
     }
 
@@ -75,6 +92,8 @@ class FloatingBallView(
     }
 
     fun destroy() {
+        requestedVisible = false
+        showGeneration++
         requests.clear(imageTarget)
         host.removeOnLayoutChangeListener(hostLayoutListener)
         host.removeView(image)

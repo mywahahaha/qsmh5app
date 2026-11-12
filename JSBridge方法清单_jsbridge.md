@@ -161,7 +161,7 @@ QSMH5APP.getAccountToken({}, function (result) {
 
 #### `logout`
 
-- 说明：H5 退出接口。原生清除持久化的 `accountToken`，销毁游戏、福利大厅和运营弹窗等当前会话页面，隐藏悬浮球，然后从一键登录步骤重新开始：初始化 `aliyunOnekeyConfig.open=1` 时尝试阿里云授权；未开启、配置不足、用户取消或认证/兑换失败时，创建新的 H5 登录实例 `web_login`。不再尝试旧 Token 自动登录，不重跑初始化和更新检查。任一方式重新登录成功后保存新 Token，并创建新的游戏实例。不会清除 `saveLocalStorage` 保存的数据或隐私同意状态。
+- 说明：H5 退出接口。原生清除持久化的 `accountToken`，销毁游戏、福利大厅和运营弹窗等当前会话页面，隐藏悬浮球，将业务方向恢复到不可变的出包方向 `packageMode`，等待物理方向与宿主布局稳定后再从一键登录步骤重新开始：初始化 `aliyunOnekeyConfig.open=1` 时尝试阿里云授权；未开启、配置不足、用户取消或认证/兑换失败时，创建新的 H5 登录实例 `web_login`。恢复后 `getGameInfo.screenMode` 与 Header `Screenmode` 均为出包方向；登录页面不会先按退出前的旧方向创建。不再尝试旧 Token 自动登录，不重跑初始化和更新检查。任一方式重新登录成功后保存新 Token，并创建新的游戏实例。不会清除 `saveLocalStorage` 保存的数据或隐私同意状态。
 - 旧页面从容器关闭后，其后续 Bridge 请求立即失效，淡出期间的旧回调不能重新打开游戏或修改新会话。
 - 参数：无。
 - 返回：`Result`，`{code:0,msg:"ok",data:true}` 表示已受理退出并启动后续流程，不代表一键登录已完成。

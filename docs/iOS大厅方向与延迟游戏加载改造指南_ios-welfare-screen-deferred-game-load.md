@@ -18,15 +18,17 @@ Android 已按 Native 方式完成福利大厅横屏打开、关闭后方向事�
 6. 方向变化后，所有已打开的 WKWebView、原生一键登录页、原生更新弹窗和悬浮球都按当前实际窗口重新布局。
 7. 悬浮球从隐藏恢复显示时，先按初始化配置和当前窗口重新定位，再显示，不能让用户看到旧位置跳动。
 8. 不新增 Native→H5 私有方向通知；H5 使用标准 viewport 变化能力自行适配。
+9. Native 单独保存不可变的出包方向 `packageMode`；退出游戏时恢复该方向，等待物理方向和根视图布局稳定后，再显示一键登录或 H5 登录。
 
 ## 2. 明确不做的事情
 
-- Native 不保存福利大厅入场方向，也不自动恢复入场方向。
+- Native 可为 `getWelfareInfo` 临时保存大厅 `entryMode`，但不使用它自动恢复方向。
 - 不发送 `screenChange` 或其他私有方向事件。
 - `closePage`、`closeMiniWindow` 不负责旋转屏幕。
 - `closePage`、`closeMiniWindow` 不消费或加载待处理游戏地址。
 - 不重建已有 `web_game` WKWebView；切换游戏地址继续复用原实例。
 - 不修改 H5 游戏内部横竖屏布局实现，Native 只保证正确的 WebView 尺寸和标准 viewport 变化。
+- 大厅进入另一款游戏时使用目标游戏方向，不恢复 `packageMode`；只有退出当前游戏并重新进入认证流程才恢复。
 
 ## 3. 最终 JSBridge 协议
 
@@ -180,9 +182,28 @@ GameBridge.closeWelfarepage('vertical', false);
 GameBridge.changeGameUrl(gameUrl, false);
 ```
 
+### 3.6 `logout`
+
+`logout` 的 Bridge 参数和返回结构保持不变，但 Native 后续流程增加出包方向恢复事务：
+
+```js
+QSMH5APP.logout({}, function (result) {
+  // code=0 只表示退出流程已受理，不表示方向恢复或重新认证已经完成。
+});
+```
+
+规则：
+
+- 清理 Token、旧游戏会话、福利大厅、运营弹窗、悬浮球状态、pending URL 和未完成的大厅事务。
+- 将业务方向立即恢复为不可变的 `packageMode`，因此后续 `getGameInfo.screenMode` 和 Header `Screenmode` 使用出包方向。
+- 如果实际方向不同，先请求系统旋转；如果本来已经是出包方向，不重复发起系统旋转。
+- 无论是否发生旋转，都必须等待根视图 bounds 与目标方向一致并完成布局。
+- 方向和布局完成前，不得展示一键登录，也不得创建 `web_login`，避免登录界面从旧方向跳到新方向。
+- 完成后直接从一键登录/H5 登录步骤继续，不重跑初始化、更新检查或旧 Token 自动登录。
+
 ## 4. 方向状态定义
 
-iOS 实现必须区分两类状态：
+iOS 实现必须区分三类状态：
 
 ### 4.1 业务方向
 
@@ -203,6 +224,35 @@ iOS 实现必须区分两类状态：
 - 同方向请求也必须经过一次布局完成步骤，不能依赖 `viewWillTransition` 一定触发。
 - `requestGeometryUpdate` 的 completion 只表示系统接受或拒绝请求，不能单独作为页面布局完成依据。
 
+### 4.3 不可变出包方向 `packageMode`
+
+`packageMode` 与可变的 `requestedMode` 必须分开保存：
+
+- 初始化时优先从 `Info.plist` 的 `QSMInitialScreenMode` 读取 `horizontal` 或 `vertical`，缺失时按 `UISupportedInterfaceOrientations` 的首选方向兜底。
+- `packageMode` 初始化后不可被 `changeScreenmode`、打开大厅或 `closeWelfarepage.mode` 修改。
+- `requestedMode` 仍表示当前业务方向，可以在游戏运行期间多次变化。
+- `logout` 固定以 `packageMode` 为恢复目标，不读取大厅 `entryMode`，也不使用“退出前最后方向”。
+- 新进程启动、退出恢复和重新认证后的首个游戏会话，都以同一个 `packageMode` 为基准。
+
+建议结构：
+
+```swift
+@MainActor final class ScreenOrientationController {
+    let packageMode: ScreenMode
+    private(set) var requestedMode: ScreenMode
+
+    init(bundle: Bundle = .main) {
+        let mode = Self.readPackageMode(from: bundle)
+        packageMode = mode
+        requestedMode = mode
+    }
+
+    func restorePackageMode(in window: UIWindow?, root: UIViewController?) {
+        change(to: packageMode, in: window, root: root)
+    }
+}
+```
+
 ## 5. 推荐职责分层
 
 ### 5.1 `AppCoordinator`：业务状态和 pending 所有者
@@ -212,6 +262,7 @@ iOS 实现必须区分两类状态：
 ```swift
 private var pendingGameURL: URL?
 private var pendingWelfareClose: PendingWelfareClose?
+private var pendingLogoutRestore: PendingLogoutRestore?
 private var welfareCloseInProgress = false
 ```
 
@@ -223,6 +274,12 @@ struct PendingWelfareClose {
     let targetMode: ScreenMode?
     let gameURL: URL?
 }
+
+struct PendingLogoutRestore {
+    let id: UUID
+    let targetMode: ScreenMode
+    let epoch: Int
+}
 ```
 
 职责：
@@ -233,6 +290,7 @@ struct PendingWelfareClose {
 - 管理窗口栈和悬浮球业务状态。
 - 收到 Root 的“方向和布局完成”回调后，才导航新游戏。
 - `logout`、重新初始化、关闭游戏、会话失效时清除 pending 并取消未完成事务。
+- `logout` 创建独立的恢复事务；只有事务 ID、epoch 和目标方向仍匹配时才进入认证流程。
 
 ### 5.2 `RootViewController`：物理方向和布局事务所有者
 
@@ -241,6 +299,7 @@ struct PendingWelfareClose {
 ```swift
 case openWelfareAfterLandscape
 case closeWelfare(PendingWelfareClose)
+case restorePackageModeForLogout(PendingLogoutRestore)
 ```
 
 或者使用等价的闭包/请求对象，关键是 Root 必须负责：
@@ -253,11 +312,14 @@ case closeWelfare(PendingWelfareClose)
 6. 重新计算所有页面、更新弹窗、一键登录容器和悬浮球层。
 7. 通知 Coordinator 事务完成。
 
+退出恢复期间还必须保证旧会话页面已销毁、悬浮球保持隐藏，并在完成回调前不展示任何登录 UI。
+
 ### 5.3 `ScreenOrientationController`：业务方向和系统请求
 
 现有 `requestedMode` 可继续作为业务方向来源。建议：
 
 - `change(to:)` 先更新 `requestedMode`，再请求系统方向。
+- 增加不可变 `packageMode` 和 `restorePackageMode(...)`；恢复仍复用统一的系统方向请求逻辑。
 - 如果目标等于当前业务方向，不重复发起系统请求。
 - 不把 `requestGeometryUpdate` 回调当作布局完成回调。
 - Root 通过 `viewWillTransition(to:with:)` completion、`viewDidLayoutSubviews` 和实际 bounds 共同判定稳定。
@@ -343,6 +405,32 @@ closeWelfarepage({mode:'invalid',loadPendingGameUrl:true})
 → 使用当前实际窗口完成重排
 → 加载一次 pending URL
 ```
+
+### 6.5 退出游戏恢复出包方向
+
+```text
+logout
+→ Bridge 成功回调表示已受理
+→ 清除 Token、pending URL 和未完成的大厅事务
+→ 销毁游戏、大厅、运营弹窗等旧会话页面
+→ 隐藏并重置悬浮球会话状态
+→ Coordinator 创建 PendingLogoutRestore(id, targetMode: packageMode, epoch)
+→ ScreenOrientationController 将 requestedMode 恢复为 packageMode
+→ 如有需要，请求系统旋转
+→ Root 等待实际 bounds 符合 packageMode 并完成 layout
+→ 重排/刷新原生覆盖层所需尺寸
+→ 校验 transaction id、epoch 和当前认证状态
+→ 清除退出恢复事务
+→ 启动一键登录；不可用或失败时再创建全新的 web_login
+```
+
+关键约束：
+
+- 竖屏包无论运行中经历多少次横竖屏切换，退出后都回到竖屏；横屏包同理。
+- 同方向退出也必须经过布局确认，但不能依赖一定会收到 `viewWillTransition`。
+- 一键登录模型和 H5 登录窗口必须在恢复完成后，按当前实际窗口尺寸创建。
+- 旧页面的异步 Bridge 回调、旧方向事务和旧 pending URL 均不得在新登录会话中生效。
+- `closePage`、`closeMiniWindow`、`closeWelfarepage` 和大厅进入新游戏不触发本事务。
 
 ## 7. pending 生命周期和防残留规则
 
@@ -438,9 +526,9 @@ if (observer) observer.observe(document.documentElement);
 | 文件 | 建议修改 |
 | --- | --- |
 | `ios/Resources/bridge.js` | 增加 `getWelfareInfo`、`closeWelfarepage`；保留新参数透传；移除不再属于协议的 `bridge.on/off` 空实现 |
-| `ios/Core/AppCoordinator.swift` | 在选择横屏前记录大厅 `entryMode`；增加 pending 与关闭事务；扩展 `changeGameUrl`；处理 `getWelfareInfo`、`closeWelfarepage`；关闭和 logout 清理上下文及 pending |
-| `ios/App/AppDelegate.swift` | 保持 `requestedMode` 为业务方向；方向请求与布局完成解耦 |
-| `ios/App/RootViewController.swift` | 打开大厅前横屏事务；关闭事务；所有页面/原生层重排；完成回调；悬浮球显示前定位 |
+| `ios/Core/AppCoordinator.swift` | 在选择横屏前记录大厅 `entryMode`；增加 pending、关闭和退出恢复事务；扩展 `changeGameUrl`；处理 `getWelfareInfo`、`closeWelfarepage`；logout 清理上下文和旧事务，恢复完成后再认证 |
+| `ios/App/AppDelegate.swift` | `ScreenOrientationController` 分离不可变 `packageMode` 与可变 `requestedMode`；方向请求与布局完成解耦 |
+| `ios/App/RootViewController.swift` | 打开大厅、关闭大厅和退出恢复方向事务；所有页面/原生层重排；完成回调；悬浮球显示前定位 |
 | `ios/Features/FloatingBallView.swift` | 增加强制恢复初始化位置的方法 |
 | `ios/Features/WebPageController.swift` | 确保方向稳定后导航 pending URL，复用现有 WKWebView |
 | `ios/Features/WebPageLayout.swift` | 继续按当前 bounds/safeArea 计算；增加横竖屏代表性测试 |
@@ -467,6 +555,8 @@ if (observer) observer.observe(document.documentElement);
 - 无效 mode 只关闭，不旋转。
 - `changeScreenmode`、打开大厅、合法关闭 mode 后，GameInfo 和 Header 立即使用新业务方向。
 - 不存在 `web_welfare` 时，关闭结果为 false；合法 mode 的方向请求行为需与 Android 保持一致。
+- `packageMode` 从 `QSMInitialScreenMode` 读取且在多次业务方向变化后保持不变。
+- `logout` 立即把业务方向恢复为 `packageMode`，并清除大厅、pending 和旧方向事务。
 
 ### 12.2 布局和 UI 测试
 
@@ -482,6 +572,9 @@ if (observer) observer.observe(document.documentElement);
 10. 悬浮球隐藏期间改变方向，恢复时直接出现在初始化位置。
 11. 悬浮球隐藏后同方向恢复，也重置为初始化位置。
 12. 快速重复关闭或会话失效后，旧完成回调不得加载 URL 或显示球。
+13. 竖屏包多次横竖屏切换后退出，先恢复竖屏并完成布局，再展示一键登录/H5 登录。
+14. 横屏包多次横竖屏切换后退出，先恢复横屏并完成布局，再展示一键登录/H5 登录。
+15. 退出时已经处于 `packageMode`，不重复请求旋转，但登录 UI 仍需等待当前布局确认。
 
 ## 13. 事务失效与并发保护
 
@@ -500,6 +593,8 @@ if (observer) observer.observe(document.documentElement);
 - 大厅关闭事件先显示悬浮球，随后方向变化造成球体跳动。
 - 同方向没有系统回调，事务永久不完成。
 - `requestGeometryUpdate` 已接受但根视图尚未更新时提前完成。
+- 旧大厅关闭完成回调与退出恢复事务竞争，导致新登录会话加载历史游戏 URL。
+- 退出恢复尚未完成就展示一键登录或创建 H5 登录，导致登录界面按旧方向闪现。
 
 ## 14. 验收标准
 
@@ -511,6 +606,8 @@ if (observer) observer.observe(document.documentElement);
 - 所有 H5 和原生覆盖层按当前实际方向布局。
 - H5 不依赖私有方向通知。
 - 悬浮球恢复显示时没有旧位置跳动。
+- `packageMode` 在进程生命周期内不可变；退出游戏总是恢复该方向。
+- 一键登录和 H5 登录只在退出恢复方向及布局稳定后展示。
 - 既有登录、退出、悬浮球心跳、窗口复用和可信来源校验测试继续通过。
 
 ## 15. 参考资料

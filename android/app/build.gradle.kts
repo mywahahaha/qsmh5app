@@ -19,6 +19,11 @@ val configuredApplicationId = providers.gradleProperty("applicationId").orNull
 val configuredApplicationName = providers.gradleProperty("appName").orNull
     ?: buildProperties?.getProperty("appName") ?: "启示梦游戏"
 val configuredOrientation = buildProperties?.getProperty("orientation") ?: "landscape"
+val packageScreenMode = when (configuredOrientation) {
+    "landscape" -> "horizontal"
+    "portrait" -> "vertical"
+    else -> error("orientation 只能为 landscape 或 portrait")
+}
 val signingProperties = System.getenv("QSM_SIGNING_PROPERTIES")?.let { propertiesPath ->
     Properties().apply {
         file(propertiesPath).reader(Charsets.UTF_8).use { load(it) }
@@ -43,6 +48,7 @@ android {
         buildConfigField("String", "GAME_VERSION", "\"${gameVersion}\"")
         buildConfigField("String", "GAME_DEVICE_TYPE", "\"android\"")
         buildConfigField("String", "APPLICATION_ID_VALUE", "\"${configuredApplicationId}\"")
+        buildConfigField("String", "PACKAGE_SCREEN_MODE", "\"${packageScreenMode}\"")
     }
 
     signingConfigs {

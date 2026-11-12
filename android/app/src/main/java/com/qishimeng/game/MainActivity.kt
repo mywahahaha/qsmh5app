@@ -108,10 +108,12 @@ class MainActivity : AppCompatActivity() {
     private var externalBrowserLaunched = false
     private var pendingHostLayoutListener: View.OnLayoutChangeListener? = null
     private var pendingWelfareClose: PendingWelfareClose? = null
+    private var pendingLogoutOrientation: Int? = null
     private var welfareCloseInProgress = false
     private val screenModeController = ScreenModeController(
         currentOrientation = { resources.configuration.orientation },
-        requestOrientation = { requestedOrientation = it }
+        requestOrientation = { requestedOrientation = it },
+        packageMode = ScreenMode.fromValue(BuildConfig.PACKAGE_SCREEN_MODE)
     )
     private val welfareScreenModeSession = WelfareScreenModeSession(
         currentMode = screenModeController::currentMode,
@@ -214,8 +216,13 @@ class MainActivity : AppCompatActivity() {
                 openWelfareAfterOrientationReady()
             }
             val container = webContainer
-            if (container == null) completePendingWelfareClose(newConfig.orientation)
-            else container.relayoutAll { completePendingWelfareClose(newConfig.orientation) }
+            if (container == null) {
+                completePendingWelfareClose(newConfig.orientation)
+                completePendingLogout(newConfig.orientation)
+            } else container.relayoutAll {
+                completePendingWelfareClose(newConfig.orientation)
+                completePendingLogout(newConfig.orientation)
+            }
         }
     }
 
@@ -530,6 +537,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun restorePackageModeThenLogin() {
+        val targetOrientation = screenModeController.packageMode.configurationOrientation
+        pendingLogoutOrientation = targetOrientation
+        screenModeController.restorePackageMode()
+        if (resources.configuration.orientation == targetOrientation) {
+            runWhenHostMatchesOrientation(targetOrientation) {
+                completePendingLogout(targetOrientation)
+            }
+        }
+    }
+
+    private fun completePendingLogout(orientation: Int) {
+        if (pendingLogoutOrientation != orientation || !hostMatchesOrientation(orientation)) return
+        pendingLogoutOrientation = null
+        beginOnekeyOrH5Login()
+    }
+
     private fun runWhenHostMatchesOrientation(orientation: Int, action: () -> Unit) {
         pendingHostLayoutListener?.let { host.removeOnLayoutChangeListener(it) }
         lateinit var listener: View.OnLayoutChangeListener
@@ -589,7 +613,7 @@ class MainActivity : AppCompatActivity() {
                     refreshFloatingBall()
                     loginStarted = true
                     // 退出后从认证分支重新开始，不再尝试旧 Token 自动登录。
-                    beginOnekeyOrH5Login()
+                    restorePackageModeThenLogin()
                 }
             },
             onPrivacyRejected = { mainHandler.post { finishAffinity() } },

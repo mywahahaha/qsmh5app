@@ -94,6 +94,55 @@ class ScreenModeControllerTest {
     }
 
     @Test
+    fun restoresImmutablePackageModeAfterRepeatedRuntimeChanges() {
+        val requested = mutableListOf<Int>()
+        val controller = ScreenModeController(
+            packageMode = ScreenMode.HORIZONTAL,
+            currentOrientation = { Configuration.ORIENTATION_LANDSCAPE },
+            requestOrientation = requested::add
+        )
+
+        controller.change("vertical")
+        controller.change("horizontal")
+        controller.change("vertical")
+        controller.restorePackageMode()
+
+        assertEquals(ScreenMode.HORIZONTAL, controller.packageMode)
+        assertEquals(ScreenMode.HORIZONTAL, controller.currentMode())
+        assertEquals(
+            listOf(
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            ),
+            requested
+        )
+    }
+
+    @Test
+    fun restoresPackagedVerticalModeAfterRuntimeLandscape() {
+        val requested = mutableListOf<Int>()
+        val controller = ScreenModeController(
+            packageMode = ScreenMode.VERTICAL,
+            currentOrientation = { Configuration.ORIENTATION_PORTRAIT },
+            requestOrientation = requested::add
+        )
+
+        controller.change("horizontal")
+        controller.restorePackageMode()
+
+        assertEquals(ScreenMode.VERTICAL, controller.currentMode())
+        assertEquals(
+            listOf(
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            ),
+            requested
+        )
+    }
+
+    @Test
     fun rejectsUnsupportedModeWithRequiredMessage() {
         val controller = ScreenModeController(
             currentOrientation = { Configuration.ORIENTATION_PORTRAIT },

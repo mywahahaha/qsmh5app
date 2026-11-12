@@ -297,7 +297,7 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 - APP 使用沉浸式全屏：隐藏状态栏、导航栏以及电池和信号等系统工具栏；Android 游戏 WebView 与宿主窗口延伸到刘海、挖孔区域，不在原生层为游戏页面预留缺口边距。H5 页面实例、悬浮球和一键登录弹窗的尺寸与定位均基于隐藏系统栏后的完整设备视口计算；H5 根据 `Notchscreen` 或 `getGameInfo.data.notchScreen` 自行避让重要内容。
 - 建议最低支持 Android API 23（Android 6.0）；Web 内容使用设备当前稳定版 Android System WebView，不在应用中固定 Chromium 内核版本。验收覆盖 Android 8、10、13、15，并记录设备系统与 WebView 版本。
 - H5 游戏页面可通过 JS 从游戏端获取 `accountToken`，并在服务器端处理。
-- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`、`notchScreen`、`screenMode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；`notchScreen` 为系统报告有刘海或挖孔时的整数 `1`，否则为 `0`；`screenMode` 表示当前**业务方向**，横屏为 `horizontal`、竖屏为 `vertical`。业务方向初始取出包配置，之后由成功的 `changeScreenmode` 或打开福利大厅时选择的横屏方向更新；用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
+- `getGameInfo` 返回 APP 本地保存的游戏信息：`packageCode`、`gameId`、`gameVersion`、`accountToken`、`deviceType`、`deviceCode`、`notchScreen`、`screenMode`。`packageCode` 未读取成功时为空字符串；`deviceType` 本期固定为 `android`；`notchScreen` 为系统报告有刘海或挖孔时的整数 `1`，否则为 `0`；`screenMode` 表示当前**业务方向**，横屏为 `horizontal`、竖屏为 `vertical`。Native 单独保存不可变的出包方向 `packageMode`；业务方向初始取 `packageMode`，之后由成功的 `changeScreenmode` 或打开福利大厅时选择的横屏方向更新，退出登录时恢复为 `packageMode`。用户尚未同意隐私协议时 `deviceCode` 为空，同意后按第 4.6 节生成并返回。其余字段按出包配置或登录状态返回。
 - `changeScreenmode({mode})` 将当前应用强制切换为横屏或竖屏，并同步更新业务方向；`mode` 仅允许 `horizontal`、`vertical`。目标方向与当前业务方向一致时不重复请求系统切换，但仍返回 `code:0,data:true`；值缺失、类型错误或不在允许范围内时返回 `code:1001,msg:"参数无效",data:null`。方法成功后，后续 `getGameInfo.data.screenMode` 与原生请求 Header `Screenmode` 均使用新值，即使系统配置切换尚未完成也不得继续返回旧值。
 - 打开福利大厅时选择横屏后，`getGameInfo.data.screenMode` 与原生请求 Header `Screenmode` 立即同步为 `horizontal`。关闭大厅不自动恢复旧方向：`closePage` 和 `closeMiniWindow` 只关闭 H5 页面，不旋转、不加载游戏，并清除大厅关联的历史待加载地址。专用接口 `closeWelfarepage({mode,loadPendingGameUrl})` 固定先关闭 `web_welfare`；`mode` 为 `horizontal` 或 `vertical` 时再切换方向，缺失、非字符串或其他值时只关闭、不旋转且不返回参数错误。
 - `closeWelfarepage.loadPendingGameUrl` 为可选布尔值，默认 `false`。`false` 表示纯关闭并清除待加载地址，不得重载游戏；`true` 表示在目标方向和宿主布局稳定后一次性消费待加载地址。没有待加载地址时不得重载当前游戏；普通关闭、重复关闭、退出登录和旧关闭接口不得触发历史地址加载。
@@ -321,7 +321,7 @@ H5 登录页、协议页、福利页和游戏页的打开/关闭均使用约 200
 
 HTTP Header 名称大小写不敏感，原生按表中拼写发送。PHP 的 `$_SERVER` 通常映射为 `HTTP_GAMEID`、`HTTP_DEVICECODE`、`HTTP_PACKAGECODE`、`HTTP_DEVICETYPE`、`HTTP_ACCOUNTOKEN`、`HTTP_GAMEVERSION`、`HTTP_NOTCHSCREEN`、`HTTP_SCREENMODE`。例如 `$deviceCode = $_SERVER['HTTP_DEVICECODE'] ?? '';`。`$server['Devicecode']` 仅在项目自身将 Header 归一化到 `$server` 数组时才适用；建议使用 `getallheaders()` 或框架 Header API 按不区分大小写方式读取。
 - 验证 Token 失败时：关闭游戏 H5 页面，重新走一遍登录流程。
-- H5 退出接口：清除本地持久化 `accountToken`，销毁游戏、福利大厅和运营弹窗等当前会话页面，隐藏悬浮球，然后从一键登录步骤重新开始。初始化 `aliyunOnekeyConfig.open=1` 时尝试阿里云授权及业务兑换；未开启、配置不足、用户取消或认证/兑换失败时，创建新的 H5 登录实例 `web_login`。不复用旧登录文档，不再尝试旧 Token 自动登录，也不重跑初始化和更新检查。任一方式重新登录成功后保存新 Token 并创建新的游戏实例。退出登录不会清除 `saveLocalStorage` 保存的数据和启动隐私同意状态；`logout` 成功回调只表示退出流程已受理，不表示重新认证成功。
+- H5 退出接口：清除本地持久化 `accountToken`，销毁游戏、福利大厅和运营弹窗等当前会话页面，隐藏悬浮球，将业务方向恢复为不可变的出包方向 `packageMode`，并等待系统物理方向与宿主布局稳定后再从一键登录步骤重新开始。初始化 `aliyunOnekeyConfig.open=1` 时尝试阿里云授权及业务兑换；未开启、配置不足、用户取消或认证/兑换失败时，创建新的 H5 登录实例 `web_login`。登录页不得在旧方向下提前创建后再跳动；恢复后 `getGameInfo.screenMode` 与 Header `Screenmode` 均使用 `packageMode`。不复用旧登录文档，不再尝试旧 Token 自动登录，也不重跑初始化和更新检查。任一方式重新登录成功后保存新 Token 并创建新的游戏实例。退出登录不会清除 `saveLocalStorage` 保存的数据和启动隐私同意状态；`logout` 成功回调只表示退出流程已受理，不表示重新认证成功。
 - 实例从容器关闭时，其 Bridge 立即失效；即使仍在执行淡出动画，旧页面后续请求也不能操作窗口或新会话。同名实例重建后仍须校验 WebView 对象身份。
 
 ### 4.6 设备码生成与隐私

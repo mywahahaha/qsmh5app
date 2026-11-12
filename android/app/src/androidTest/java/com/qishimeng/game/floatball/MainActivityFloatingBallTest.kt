@@ -74,6 +74,7 @@ class MainActivityFloatingBallTest {
     private var receivedAuthConfig: OnekeyConfig? = null
     private var tokenAtAuthStart: String? = "not-observed"
     private var windowsAtAuthStart: List<String>? = null
+    private var orientationAtAuthStart: Int? = null
     @Volatile private var exchangeRequest: ApiRequest? = null
     private val lifecycle = ActivityLifecycleCallback { activity, stage ->
         if (activity is MainActivity && stage == Stage.PRE_ON_CREATE) {
@@ -104,6 +105,7 @@ class MainActivityFloatingBallTest {
                     val container = MainActivity::class.java.getDeclaredField("webContainer")
                         .apply { isAccessible = true }.get(activity) as WebContainer
                     windowsAtAuthStart = container.windowNames()
+                    orientationAtAuthStart = activity.resources.configuration.orientation
                     authCompletion = completion
                     authAttempts.incrementAndGet()
                 })
@@ -272,6 +274,44 @@ class MainActivityFloatingBallTest {
         assertEquals(0, authAttempts.get())
         assertEquals(1, initRequests.get())
         assertEquals(1, tokenRequests.get())
+    }
+
+    @Test fun logoutRestoresPackagedLandscapeBeforeOpeningH5Login() {
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitMain("退出前游戏应已切为竖屏") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+
+        call(game, "logout", "{}")
+
+        val login = awaitWeb("login")
+        awaitMain("退出后必须先恢复打包横屏再显示登录页") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+                pageFillsCurrentHost("web_login", landscape = true)
+        }
+        call(login, "getGameInfo", "{}")
+        awaitJs(login, "window.bridgeResult && window.bridgeResult.data.screenMode === 'horizontal'")
+        assertBusinessScreenMode("horizontal")
+    }
+
+    @Test fun logoutRestoresPackagedLandscapeBeforeStartingOnekey() {
+        onekeyEnabled = true
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        call(game, "changeScreenmode", "{mode:'vertical'}")
+        awaitMain("退出前一键登录场景应已切为竖屏") {
+            activityRule.activity.resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        }
+
+        call(game, "logout", "{}")
+
+        awaitMain("恢复打包横屏后才能启动一键登录") { authAttempts.get() == 1 }
+        onMain {
+            assertEquals(Configuration.ORIENTATION_LANDSCAPE, orientationAtAuthStart)
+            assertEquals(emptyList<String>(), windowsAtAuthStart)
+        }
     }
 
     private fun assertLogoutOnekeyFallback(outcome: OnekeyAuthResult) {

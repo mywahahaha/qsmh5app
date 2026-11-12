@@ -3,9 +3,13 @@ package com.qishimeng.game.device
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 
-enum class ScreenMode(val value: String, val requestedOrientation: Int) {
-    HORIZONTAL("horizontal", ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE),
-    VERTICAL("vertical", ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+enum class ScreenMode(
+    val value: String,
+    val requestedOrientation: Int,
+    val configurationOrientation: Int
+) {
+    HORIZONTAL("horizontal", ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE, Configuration.ORIENTATION_LANDSCAPE),
+    VERTICAL("vertical", ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, Configuration.ORIENTATION_PORTRAIT);
 
     companion object {
         fun fromConfiguration(orientation: Int): ScreenMode =
@@ -18,7 +22,8 @@ enum class ScreenMode(val value: String, val requestedOrientation: Int) {
 
 class ScreenModeController(
     private val currentOrientation: () -> Int,
-    private val requestOrientation: (Int) -> Unit
+    private val requestOrientation: (Int) -> Unit,
+    val packageMode: ScreenMode = ScreenMode.fromConfiguration(currentOrientation())
 ) {
     private var selectedMode: ScreenMode? = null
 
@@ -35,4 +40,6 @@ class ScreenModeController(
         }
         return true
     }
+
+    fun restorePackageMode(): Boolean = change(packageMode.value)
 }

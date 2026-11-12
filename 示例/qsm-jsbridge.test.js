@@ -5,6 +5,7 @@ var fs = require('node:fs');
 var vm = require('node:vm');
 
 var bridgeCallback;
+var welfareInfoCallback;
 var screenModeParams;
 var closeWelfareParams;
 var changeGameUrlParams;
@@ -12,6 +13,9 @@ var context = {
   QSMH5APP: {
     getGameInfo: function (params, callback) {
       bridgeCallback = callback;
+    },
+    getWelfareInfo: function (params, callback) {
+      welfareInfoCallback = callback;
     },
     changeScreenmode: function (params, callback) {
       screenModeParams = params;
@@ -84,6 +88,16 @@ async function run() {
 
   assert.equal(await context.GameBridge.changeScreenmode('vertical'), true);
   assert.deepEqual(JSON.parse(JSON.stringify(screenModeParams)), { mode: 'vertical' });
+
+  var welfareInfoPromise = context.GameBridge.getWelfareInfo();
+  welfareInfoCallback({
+    code: 0,
+    data: { entryMode: 'vertical', currentMode: 'horizontal' }
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(await welfareInfoPromise)), {
+    entryMode: 'vertical',
+    currentMode: 'horizontal'
+  });
 
   assert.equal(await context.GameBridge.closeWelfarepage('vertical'), true);
   assert.deepEqual(JSON.parse(JSON.stringify(closeWelfareParams)), {

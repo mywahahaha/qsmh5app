@@ -5,6 +5,7 @@ import com.qishimeng.game.auth.GameInfo
 import com.qishimeng.game.auth.OneKeyLoginOutcome
 import com.qishimeng.game.auth.OnekeyConfig
 import com.qishimeng.game.auth.OnekeyLoginService
+import com.qishimeng.game.device.WelfarePageInfo
 import com.qishimeng.game.privacy.PrivacyConsentStore
 import com.qishimeng.game.role.GameRoleStore
 import com.qishimeng.game.web.WebContainer
@@ -29,6 +30,7 @@ class BridgeActions(
     private val changeScreenMode: (Any?) -> Boolean,
     private val openMiniWindow: (String) -> Boolean = { webContainer.openInstance(it) != null },
     private val cancelPendingWelfareOpen: () -> Unit = {},
+    private val getWelfareInfo: () -> WelfarePageInfo? = { null },
     private val changeGameUrl: (String, Boolean) -> Boolean = webContainer::changeGameUrl,
     private val closeWelfarePageAction: (Any?, Boolean) -> Boolean = { mode, loadPendingGameUrl ->
         val pendingUrl = if (loadPendingGameUrl) webContainer.takePendingGameUrl()
@@ -114,6 +116,7 @@ class BridgeActions(
             }
             "getAccountToken" -> BridgeResult(0, "ok", mapOf("accountToken" to tokenStore.token.orEmpty()))
             "getGameInfo" -> BridgeResult(0, "ok", gameInfo().forBridge(privacyStore.isAgreed()))
+            "getWelfareInfo" -> BridgeResult(0, "ok", welfareInfoForBridge(currentInstance, getWelfareInfo()))
             "changeScreenmode" -> BridgeResult(0, "ok", changeScreenMode(args["mode"]))
             "saveGameRole" -> BridgeResult(0, "ok", roleStore.save(args))
             "saveLocalStorage" -> BridgeResult(0, "ok", localStorage.save(arguments))
@@ -186,6 +189,14 @@ internal fun welfareCloseLoadsPendingGameUrl(value: Any?): Boolean = when (value
     null -> false
     is Boolean -> value
     else -> throw IllegalArgumentException("loadPendingGameUrl 参数无效")
+}
+
+internal fun welfareInfoForBridge(currentInstance: String, info: WelfarePageInfo?): Map<String, String> {
+    require(currentInstance == "web_welfare" && info != null) { "当前页面无法获取大厅信息" }
+    return mapOf(
+        "entryMode" to info.entryMode.value,
+        "currentMode" to info.currentMode.value
+    )
 }
 
 internal fun closeWelfarePage(

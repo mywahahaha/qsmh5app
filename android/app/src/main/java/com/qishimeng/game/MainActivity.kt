@@ -114,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         requestOrientation = { requestedOrientation = it }
     )
     private val welfareScreenModeSession = WelfareScreenModeSession(
+        currentMode = screenModeController::currentMode,
         selectHorizontal = { screenModeController.change("horizontal") },
         requestOrientation = { requestedOrientation = it }
     )
@@ -467,6 +468,7 @@ class MainActivity : AppCompatActivity() {
         if (instanceName != "web_welfare") return container.openInstance(instanceName) != null
         val configured = initConfig?.pages?.values?.any { it.instance == instanceName } == true
         if (!configured) return false
+        if (container.windowNames().lastOrNull() == "web_welfare") return true
         if (!container.hasWindow("web_welfare")) container.clearPendingGameUrl()
         if (welfareScreenModeSession.shouldOpenNow(resources.configuration.orientation)) {
             return openWelfareAfterOrientationReady()
@@ -595,6 +597,7 @@ class MainActivity : AppCompatActivity() {
             changeScreenMode = screenModeController::change,
             openMiniWindow = ::openMiniWindow,
             cancelPendingWelfareOpen = welfareScreenModeSession::cancelPendingOpen,
+            getWelfareInfo = welfareScreenModeSession::info,
             changeGameUrl = { url, waitCloseWelfarepage ->
                 webContainer?.changeGameUrl(url, waitCloseWelfarepage) ?: false
             },

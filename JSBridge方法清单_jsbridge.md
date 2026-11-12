@@ -67,6 +67,7 @@ QSMH5APP.getAccountToken({}, function (result) {
 | `getAccountToken` | H5 → 原生 | 登录 | 获取本地缓存的 accountToken |
 | `logout` | H5 → 原生 | 登录 | 退出登录，清理会话 |
 | `getGameInfo` | H5 → 原生 | 游戏信息 | 获取游戏相关信息 |
+| `getWelfareInfo` | H5 → 原生 | 福利大厅 | 获取本次大厅打开前与当前的业务方向 |
 | `changeScreenmode` | H5 → 原生 | 屏幕方向 | 强制切换当前应用的横竖屏方向 |
 | `saveGameRole` | H5 → 原生 | 游戏角色 | 按游戏 ID 全量替换角色信息 |
 | `getGameRole` | H5 → 原生 | 游戏角色 | 按游戏 ID 获取本地角色信息 |
@@ -192,6 +193,31 @@ QSMH5APP.getGameInfo({}, function (result) {
   if (result.code === 0) {
     var gameInfo = result.data;
   }
+});
+```
+
+#### `getWelfareInfo`
+
+- 说明：仅供当前活动的 `web_welfare` 页面获取本次大厅会话的方向上下文。Native 在打开大厅并选择横屏前记录 `entryMode`；旋转等待期间的重复打开请求不会覆盖该值。本接口只提供信息，不触发方向切换，也不用于 Native 自动恢复方向。
+- 参数：无。
+- 返回：成功时 `Result.data` 包含：
+  - `entryMode`：打开本次大厅前的业务方向，值为 `horizontal` 或 `vertical`。
+  - `currentMode`：调用时的当前业务方向；大厅正常打开后通常为 `horizontal`。
+- 调用限制：仅当前 `web_welfare` 文档可调用。其他页面、没有有效大厅会话或会话已关闭时返回 `code=1001`。大厅关闭、打开取消或退出登录后，Native 清除此临时上下文。
+
+```js
+QSMH5APP.getWelfareInfo({}, function (result) {
+  if (result.code !== 0) return;
+  var entryMode = result.data.entryMode;
+  var currentMode = result.data.currentMode;
+});
+```
+
+大厅只需返回进入前方向时，可先读取再关闭：
+
+```js
+GameBridge.getWelfareInfo().then(function (info) {
+  return GameBridge.closeWelfarepage(info.entryMode, false);
 });
 ```
 

@@ -30,7 +30,52 @@ Android 已按 Native 方式完成福利大厅横屏打开、关闭后方向事�
 
 ## 3. 最终 JSBridge 协议
 
-### 3.1 `changeGameUrl`
+### 3.1 `getWelfareInfo`
+
+```js
+QSMH5APP.getWelfareInfo({}, function (result) {
+  if (result.code !== 0) return;
+  var entryMode = result.data.entryMode;
+  var currentMode = result.data.currentMode;
+});
+```
+
+返回：
+
+```json
+{
+  "code": 0,
+  "msg": "ok",
+  "data": {
+    "entryMode": "vertical",
+    "currentMode": "horizontal"
+  }
+}
+```
+
+规则：
+
+- 仅当前活动的 `web_welfare` 文档可以调用；其他页面或无有效大厅会话时返回 `code=1001`。
+- Native 必须在将业务方向选择为 `horizontal` 之前记录 `entryMode`。
+- 竖屏游戏打开大厅返回 `entryMode=vertical`；横屏游戏打开大厅返回 `entryMode=horizontal`。
+- `currentMode` 读取调用时的业务方向，大厅正常显示后通常为 `horizontal`。
+- 旋转等待期间重复点击悬浮球或重复请求打开大厅，不得覆盖首次记录的 `entryMode`。
+- 大厅已经位于最上层时重复调用 `openMiniWindow`，不得开启新会话或覆盖 `entryMode`。
+- 大厅从游戏后方重新置顶时视为新一轮进入，按重新置顶前的业务方向更新 `entryMode`。
+- 大厅关闭、打开取消、退出登录或会话失效时清除。
+- 该值只供 H5 决策，Native 不使用它自动恢复方向，也不影响 `getGameInfo.screenMode` 和 Header `Screenmode`。
+
+纯关闭并回到进入大厅前方向：
+
+```js
+GameBridge.getWelfareInfo().then(function (info) {
+  return GameBridge.closeWelfarepage(info.entryMode, false);
+});
+```
+
+大厅进入新游戏时应使用目标游戏方向，不使用 `entryMode`。
+
+### 3.2 `changeGameUrl`
 
 ```js
 QSMH5APP.changeGameUrl({
@@ -60,7 +105,7 @@ QSMH5APP.changeGameUrl({
 - URL 无效时返回参数错误，不得覆盖已有 pending。
 - 成功回调表示原生接受请求，不表示远端页面加载完成。
 
-### 3.2 `closeWelfarepage`
+### 3.3 `closeWelfarepage`
 
 ```js
 QSMH5APP.closeWelfarepage({
@@ -98,7 +143,7 @@ QSMH5APP.closeWelfarepage({
 - 如果 `web_welfare` 未打开，返回 `data=false`；合法 `mode` 仍按 Android 语义更新并请求方向，但已取出的 pending 直接丢弃，不得加载游戏。
 - 返回 `Result.data` 表示 `web_welfare` 是否实际关闭成功；方向请求不改变关闭结果。
 
-### 3.3 旧关闭接口
+### 3.4 旧关闭接口
 
 ```js
 QSMH5APP.closePage({}, callback);
@@ -112,7 +157,7 @@ QSMH5APP.closeMiniWindow({page: 'web_welfare'}, callback);
 - 不切换方向。
 - 不加载游戏地址。
 
-### 3.4 大厅进入新游戏的标准调用顺序
+### 3.5 大厅进入新游戏的标准调用顺序
 
 ```js
 GameBridge.changeGameUrl(gameUrl, true).then(function (accepted) {
@@ -392,8 +437,8 @@ if (observer) observer.observe(document.documentElement);
 
 | 文件 | 建议修改 |
 | --- | --- |
-| `ios/Resources/bridge.js` | 增加 `closeWelfarepage`；保留新参数透传；移除不再属于协议的 `bridge.on/off` 空实现 |
-| `ios/Core/AppCoordinator.swift` | 增加 pending 与关闭事务；扩展 `changeGameUrl`；处理 `closeWelfarepage`；旧关闭和 logout 清理 pending |
+| `ios/Resources/bridge.js` | 增加 `getWelfareInfo`、`closeWelfarepage`；保留新参数透传；移除不再属于协议的 `bridge.on/off` 空实现 |
+| `ios/Core/AppCoordinator.swift` | 在选择横屏前记录大厅 `entryMode`；增加 pending 与关闭事务；扩展 `changeGameUrl`；处理 `getWelfareInfo`、`closeWelfarepage`；关闭和 logout 清理上下文及 pending |
 | `ios/App/AppDelegate.swift` | 保持 `requestedMode` 为业务方向；方向请求与布局完成解耦 |
 | `ios/App/RootViewController.swift` | 打开大厅前横屏事务；关闭事务；所有页面/原生层重排；完成回调；悬浮球显示前定位 |
 | `ios/Features/FloatingBallView.swift` | 增加强制恢复初始化位置的方法 |
@@ -410,6 +455,9 @@ if (observer) observer.observe(document.documentElement);
 ### 12.1 Bridge 和状态单测
 
 - `changeGameUrl` 缺失 `waitCloseWelfarepage` 时立即加载。
+- `getWelfareInfo` 仅允许当前大厅调用，竖屏/横屏入场分别返回正确 `entryMode`。
+- 旋转等待期间重复打开和大厅已置顶时重复打开，不覆盖 `entryMode`。
+- 大厅关闭、打开取消、退出登录后 `getWelfareInfo` 上下文失效。
 - 延迟模式不提前导航、不置顶、不显示球。
 - 两次延迟调用只保留最后一个 URL。
 - 纯关闭清除 pending，不重载游戏。

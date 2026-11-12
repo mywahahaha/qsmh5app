@@ -65,10 +65,12 @@ test('单项和批量的非字符串数字 value 变为空串且不修改原参�
 
 test('关闭大厅专用接口沿用统一异步调用协议', () => {
   const { window, requests } = injectedBridge();
+  window.QSMH5APP.getWelfareInfo({}, function () {});
   window.QSMH5APP.changeGameUrl({ url: 'https://box.74meng.com/game', waitCloseWelfarepage: true }, function () {});
   window.QSMH5APP.closeWelfarepage({ mode: 'vertical', loadPendingGameUrl: true }, function () {});
   assert.deepEqual(requests, [
-    { id: '1', method: 'changeGameUrl', args: { url: 'https://box.74meng.com/game', waitCloseWelfarepage: true } },
-    { id: '2', method: 'closeWelfarepage', args: { mode: 'vertical', loadPendingGameUrl: true } }
+    { id: '1', method: 'getWelfareInfo', args: {} },
+    { id: '2', method: 'changeGameUrl', args: { url: 'https://box.74meng.com/game', waitCloseWelfarepage: true } },
+    { id: '3', method: 'closeWelfarepage', args: { mode: 'vertical', loadPendingGameUrl: true } }
   ]);
 });

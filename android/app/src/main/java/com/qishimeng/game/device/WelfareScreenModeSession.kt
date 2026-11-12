@@ -3,13 +3,16 @@ package com.qishimeng.game.device
 import android.content.res.Configuration
 
 class WelfareScreenModeSession(
+    private val currentMode: () -> ScreenMode,
     private val selectHorizontal: () -> Unit,
     private val requestOrientation: (Int) -> Unit
 ) {
     private var waitingForLandscape = false
+    private var entryMode: ScreenMode? = null
 
     fun shouldOpenNow(orientation: Int): Boolean {
         if (waitingForLandscape) return false
+        entryMode = currentMode()
         selectHorizontal()
         if (orientation == Configuration.ORIENTATION_LANDSCAPE) return true
 
@@ -26,5 +29,13 @@ class WelfareScreenModeSession(
 
     fun cancelPendingOpen() {
         waitingForLandscape = false
+        entryMode = null
     }
+
+    fun info(): WelfarePageInfo? = entryMode?.let { WelfarePageInfo(it, currentMode()) }
 }
+
+data class WelfarePageInfo(
+    val entryMode: ScreenMode,
+    val currentMode: ScreenMode
+)

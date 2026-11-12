@@ -470,12 +470,14 @@ H5 页面通过全局对象 `QSMH5APP` 与原生交互。接口范围包括：
 
 - 隐私协议：`agreePrivacyPolicy`、`rejectPrivacyPolicy`。
 - 登录与会话：`requestPhoneLogin`、`notifyLoginSuccess`、`getAccountToken`、`logout`。
-- 游戏信息与屏幕方向：`getGameInfo`、`changeScreenmode`。
+- 游戏信息与屏幕方向：`getGameInfo`、`getWelfareInfo`、`changeScreenmode`。
 - 游戏角色：`saveGameRole`、`getGameRole`。
 - 本地存储：`saveLocalStorage`、`getLocalStorage`。
 - 第三方应用：`isAppInstalled`、`openApp`，均接收 `{packageName}`，通过统一异步回调的 `data` 返回布尔值。检测可见且已安装的包为 `true`，未安装或系统不可见为 `false`；打开采用系统提供的包启动入口，系统接受启动请求为 `true`，未安装、无入口或系统拒绝为 `false`。参数无效返回 `code:1001,data:false`，其他异常返回 `code:9999,data:false`。
 - 第三方应用能力仅供已注入 Bridge 的可信页面调用；打开应由 H5 按钮点击触发，不自动下载、安装或跳转商店。Android 11+ 声明 MAIN/LAUNCHER 包查询和 `com.me74.qsmhz`，不使用 `QUERY_ALL_PACKAGES`；其他无桌面入口的目标包须在 Manifest 的 `queries` 中显式添加后重新出包，不能保证任意隐藏包的检测准确性。应用安装信息的使用应纳入隐私披露，H5 不应批量枚举包名。
 - 悬浮球与窗口：`setFloatingBall`、`openMiniWindow`、`closeMiniWindow`、`closeWelfarepage`、`changeGameUrl`、`closePage`。
+
+`getWelfareInfo` 仅允许当前活动的 `web_welfare` 调用，返回 `{entryMode,currentMode}`。`entryMode` 在 Native 选择大厅横屏方向前记录，代表打开本次大厅前的业务方向；等待旋转期间的重复打开请求不得覆盖。`currentMode` 为调用时的当前业务方向。该上下文只供 H5 决策，Native 不据此自动恢复方向；大厅关闭、打开取消或退出登录后清除。
 
 各方法的参数、回调和返回码见 [JSBridge 方法清单](JSBridge方法清单_jsbridge.md)。业务规则以本文为准；Bridge 签名、回调协议及错误码仍需 Android 与 H5 联调确认。
 

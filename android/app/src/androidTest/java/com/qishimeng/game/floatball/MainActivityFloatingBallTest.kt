@@ -535,6 +535,8 @@ class MainActivityFloatingBallTest {
         call(welfare, "getGameInfo", "{}")
         awaitJs(welfare, "window.bridgeResult && window.bridgeResult.data.screenMode === 'horizontal'")
         assertBusinessScreenMode("horizontal")
+        call(welfare, "getWelfareInfo", "{}")
+        awaitJs(welfare, "window.bridgeResult && window.bridgeResult.code === 0 && window.bridgeResult.data.entryMode === 'vertical' && window.bridgeResult.data.currentMode === 'horizontal'")
 
         call(welfare, "closePage", "{}")
         awaitMain("closePage 只关闭大厅，不能恢复竖屏") {

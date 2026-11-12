@@ -92,6 +92,9 @@
     getGameInfo: function () {
       return callNativeBridge('getGameInfo', {});
     },
+    getWelfareInfo: function () {
+      return callNativeBridge('getWelfareInfo', {});
+    },
     getAccountToken: function () {
       return callNativeBridge('getAccountToken', {});
     },

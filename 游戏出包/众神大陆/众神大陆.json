@@ -1,0 +1,12 @@
+{
+  "game_id": 106,
+  "game_version": "1.0.1",
+  "application_name": "众神大陆",
+  "application_id": "com.mob74meng.zsdl",
+  "keystore_path": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\安卓通用证书\\qsmeng.jks",
+  "key_alias": "Qsmeng",
+  "icon_path": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\众神大陆\\icon.png",
+  "splash_dir": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\通用闪图\\横版",
+  "output_dir": "E:\\Yang\\youxing_item\\qishimeng_h5_sdk\\游戏出包\\众神大陆\\build",
+  "orientation": "landscape"
+}

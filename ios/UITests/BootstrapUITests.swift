@@ -104,6 +104,62 @@ import XCTest
         let landscape = NSPredicate { [self] _, _ in app.frame.width > app.frame.height }
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
     }
+    func testWelfareCloseControlsOrientationAndRelayoutsOpenGame() {
+        launch("floatball"); agreeAndLogin(); waitForBall(visible: true)
+        let portrait = NSPredicate { [self] _, _ in app.frame.height > app.frame.width }
+        let landscape = NSPredicate { [self] _, _ in app.frame.width > app.frame.height }
+        func assertPageFits(_ instance: String) {
+            let frame = app.webViews[instance].frame
+            XCTAssertEqual(frame.width, app.frame.width, accuracy: 2)
+            XCTAssertEqual(frame.height, app.frame.height, accuracy: 2)
+        }
+        button("切换竖屏").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: portrait, object: app)], timeout: 8), .completed)
+        XCTAssertTrue(text("视口方向：vertical").waitForExistence(timeout: 5)); assertPageFits("web_game")
+        button("读取屏幕方向").tap()
+        XCTAssertTrue(text("screenMode=vertical").waitForExistence(timeout: 5))
+
+        ball.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        assertPageFits("web_welfare")
+        XCTAssertTrue(button("返回游戏").waitForExistence(timeout: 5))
+        app.webViews["web_welfare"].buttons["读取屏幕方向"].tap()
+        XCTAssertTrue(app.webViews["web_welfare"].staticTexts["screenMode=horizontal"].waitForExistence(timeout: 5))
+        button("返回游戏").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        XCTAssertTrue(text("视口方向：horizontal").waitForExistence(timeout: 5)); assertPageFits("web_game")
+
+        button("切换竖屏").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: portrait, object: app)], timeout: 8), .completed)
+        ball.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        app.webViews["web_welfare"].buttons["关闭大厅并切竖屏"].tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: portrait, object: app)], timeout: 8), .completed)
+        XCTAssertTrue(text("视口方向：vertical").waitForExistence(timeout: 5)); assertPageFits("web_game")
+        button("打开福利窗口").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        assertPageFits("web_welfare")
+        app.webViews["web_welfare"].buttons["关闭大厅无效方向"].tap()
+        XCTAssertGreaterThan(app.frame.width, app.frame.height)
+    }
+    func testDeferredGameLoadsAfterPortraitLayoutAndLogoutRestoresPackageMode() {
+        launch("floatball"); agreeAndLogin(); waitForBall(visible: true)
+        let landscape = NSPredicate { [self] _, _ in app.frame.width > app.frame.height }
+        let portrait = NSPredicate { [self] _, _ in app.frame.height > app.frame.width }
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        button("打开福利窗口").tap()
+        XCTAssertTrue(button("读取大厅方向").waitForExistence(timeout: 5))
+        button("读取大厅方向").tap()
+        XCTAssertTrue(app.webViews["web_welfare"].staticTexts["entryMode=horizontal currentMode=horizontal"].waitForExistence(timeout: 5))
+        button("延迟进入竖屏游戏").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: portrait, object: app)], timeout: 8), .completed)
+        XCTAssertTrue(app.webViews["web_game"].buttons["读取屏幕方向"].waitForExistence(timeout: 8))
+        button("读取屏幕方向").tap()
+        XCTAssertTrue(app.webViews["web_game"].staticTexts["screenMode=vertical"].waitForExistence(timeout: 5))
+        button("退出登录").tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: landscape, object: app)], timeout: 8), .completed)
+        XCTAssertTrue(button("使用测试账号登录").waitForExistence(timeout: 8))
+    }
     func testLogoutPreservesGenericStorageAndRelaunchUsesSavedToken() {
         launch(); agreeAndLogin()
         button("保存测试数据").tap(); XCTAssertTrue(text("结果：0 true").waitForExistence(timeout: 5))
@@ -168,6 +224,13 @@ import XCTest
         attachScreenshot("悬浮球_right0_贴屏幕右边")
     }
     func testFloatingBallDragWelfareReuseAndLatestRuntimeState() async throws {
+        func imageRequestCounts() async throws -> (defaults: Int, active: Int) {
+            let (data, _) = try await URLSession.shared.data(from: URL(string: "http://localhost:18740/__requests")!)
+            let rows = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
+            return (rows.filter { $0["path"] as? String == "/images/default.png" }.count,
+                    rows.filter { $0["path"] as? String == "/images/active.png" }.count)
+        }
+        let initialRequests = try await imageRequestCounts()
         launch("floatball")
         XCTAssertTrue(button("同意并继续").waitForExistence(timeout: 15)); XCTAssertFalse(ball.exists)
         button("同意并继续").tap()
@@ -176,6 +239,7 @@ import XCTest
         attachScreenshot("悬浮球_默认位置")
         button("增加游戏计数").tap()
         let initialX = ball.frame.minX
+        let initialY = ball.frame.minY
         let bottom = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: ball.frame.midX, dy: app.frame.maxY - 2))
         ball.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: bottom)
         XCTAssertEqual(ball.frame.minX, initialX, accuracy: 1); XCTAssertLessThanOrEqual(ball.frame.maxY, app.frame.maxY)
@@ -183,11 +247,10 @@ import XCTest
         let top = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0)).withOffset(CGVector(dx: ball.frame.midX, dy: 1))
         ball.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: top)
         XCTAssertEqual(ball.frame.minX, initialX, accuracy: 1); XCTAssertGreaterThanOrEqual(ball.frame.minY, 0)
-        let draggedY = ball.frame.minY
         ball.tap(); XCTAssertTrue(button("返回游戏").waitForExistence(timeout: 5)); waitForBall(visible: false)
         attachScreenshot("悬浮球_福利置顶暂隐")
         button("返回游戏").tap(); waitForBall(visible: true, active: false)
-        XCTAssertTrue(text("游戏计数：1").exists); XCTAssertEqual(ball.frame.minY, draggedY, accuracy: 1)
+        XCTAssertTrue(text("游戏计数：1").exists); XCTAssertEqual(ball.frame.minY, initialY, accuracy: 1)
         ball.tap(); button("福利中隐藏激活球").tap(); button("返回游戏").tap(); waitForBall(visible: false)
         button("显示激活悬浮球").tap(); waitForBall(visible: true, active: true)
         ball.tap(); button("换地址返回游戏").tap(); waitForBall(visible: true, active: true)
@@ -196,10 +259,9 @@ import XCTest
         waitForBall(visible: true, active: true); XCTAssertTrue(text("游戏计数：1").waitForExistence(timeout: 5))
         attachScreenshot("悬浮球_激活及福利返回保留新文档")
         button("恢复默认悬浮球").tap(); waitForBall(visible: true, active: false)
-        let (data, _) = try await URLSession.shared.data(from: URL(string: "http://localhost:18740/__requests")!)
-        let rows = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
-        XCTAssertEqual(rows.filter { $0["path"] as? String == "/images/default.png" }.count, 1)
-        XCTAssertEqual(rows.filter { $0["path"] as? String == "/images/active.png" }.count, 1)
+        let finalRequests = try await imageRequestCounts()
+        XCTAssertEqual(finalRequests.defaults - initialRequests.defaults, 1)
+        XCTAssertEqual(finalRequests.active - initialRequests.active, 1)
         button("关闭游戏").tap(); XCTAssertTrue(app.staticTexts["游戏已关闭"].waitForExistence(timeout: 5)); waitForBall(visible: false)
     }
     func testFloatingBallInitiallyHiddenAndLogoutResetsState() {

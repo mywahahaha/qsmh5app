@@ -13,6 +13,7 @@ import WebKit
     private var floatingBall: FloatingBallView?
     private var updatePrompt: UpdatePromptView?
     private var resetLocalState: (() async throws -> Void)?
+    private var floatingBallRevealID = UUID()
     init(coordinator: AppCoordinator, orientation: ScreenOrientationController,
          resetLocalState: (() async throws -> Void)? = nil) {
         self.coordinator = coordinator; self.orientation = orientation; self.resetLocalState = resetLocalState
@@ -56,7 +57,26 @@ import WebKit
         updatePrompt?.frame = view.bounds
         for page in pages.values {
             page.view.frame = WebPageLayout.frame(for: page.spec, bounds: view.bounds, safeArea: bounds)
+            page.view.layoutIfNeeded()
         }
+    }
+    func waitForLayout(mode: ScreenMode?) async -> Bool {
+        for _ in 0..<100 {
+            guard !Task.isCancelled else { return false }
+            view.setNeedsLayout(); view.layoutIfNeeded()
+            let size = view.bounds.size
+            let matches = view.window != nil && size.width > 0 && size.height > 0 && size.width != size.height &&
+                (mode == nil || (mode == .horizontal ? size.width > size.height : size.height > size.width))
+            if matches {
+                // 同方向也经过一个新的布局周期；旋转回调本身不代表页面尺寸已更新。
+                await Task.yield()
+                view.setNeedsLayout(); view.layoutIfNeeded()
+                let settled = view.bounds.size
+                if settled == size { return true }
+            }
+            try? await Task.sleep(nanoseconds: 30_000_000)
+        }
+        return false
     }
     private func apply(_ event: ViewEvent) {
         switch event {
@@ -105,7 +125,11 @@ import WebKit
                     let page = try WebPageController(spec: spec, coordinator: coordinator)
                     page.onContentReady = { [weak self] in self?.splash.contentReady() }
                     page.onTerminalFailure = { [weak self] in self?.splash.dismiss() }
-                    pages[spec.instance] = page; addChild(page); view.addSubview(page.view); page.didMove(toParent: self)
+                    pages[spec.instance] = page; addChild(page)
+                    page.view.frame = WebPageLayout.frame(for: spec, bounds: view.bounds,
+                                                          safeArea: view.safeAreaLayoutGuide.layoutFrame)
+                    view.addSubview(page.view); page.didMove(toParent: self)
+                    page.view.layoutIfNeeded(); page.start()
                 }
                 view.setNeedsLayout()
             } catch { showStatus(.failure(error.localizedDescription)) }
@@ -113,12 +137,27 @@ import WebKit
             if floatingBall?.configuration != presentation.configuration { floatingBall?.destroy(); floatingBall = nil }
             if presentation.state.visible, floatingBall == nil, let config = presentation.configuration {
                 let ball = FloatingBallView(configuration: config)
-                ball.addAction(UIAction { [weak self] _ in self?.coordinator.openWelfareFromFloatingBall() }, for: .touchUpInside)
+                ball.isHidden = true
+                ball.addAction(UIAction { [weak self] _ in
+                    Task { await self?.coordinator.openWelfareFromFloatingBall() }
+                }, for: .touchUpInside)
                 floatingBall = ball; floatingBallLayer.addSubview(ball)
                 ball.layout(in: floatingBallLayer.bounds.size)
             }
             floatingBall?.setActive(presentation.state.active)
-            floatingBall?.isHidden = !presentation.state.visible
+            if presentation.state.visible, let ball = floatingBall, ball.isHidden {
+                let id = UUID(); floatingBallRevealID = id
+                ball.layout(in: floatingBallLayer.bounds.size, resetToConfiguration: true)
+                view.layoutIfNeeded()
+                Task { [weak self, weak ball] in
+                    await Task.yield()
+                    guard let self, let ball, self.floatingBall === ball,
+                          self.floatingBallRevealID == id, self.coordinator.floatingBallState.visible else { return }
+                    ball.isHidden = false
+                }
+            } else if !presentation.state.visible {
+                floatingBallRevealID = UUID(); floatingBall?.isHidden = true
+            }
             view.bringSubviewToFront(floatingBallLayer)
         }
         view.bringSubviewToFront(floatingBallLayer)

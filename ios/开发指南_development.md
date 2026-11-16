@@ -49,7 +49,7 @@ https://box.74meng.com/h5/play?gid=29&sid=1&cid=218&app=1&xid=0
 
 `RuntimeConfiguration` 将读取结果存入 `GameIdentity.packageCode`，`getGameInfo.data.packageCode` 与原生请求 `Packagecode` Header 共用该值；H5 请求通过通用包装读取信息后设置 Header。未分包母包两处均为空。原生接口另附 `Notchscreen` Header：iPhone 当前安全区域显示屏幕开孔时为 `1`，否则为 `0`。JS Bridge 的 `getGameInfo.data.notchScreen` 使用同一判断，返回数字 `1` 或 `0`。H5 可用它选择刘海屏布局；它不替代 H5 自身的安全区域适配。
 
-屏幕方向使用 `horizontal` / `vertical` 两个值。`getGameInfo.data.screenMode`、原生请求和公共 Axios 包装的 `Screenmode` Header 都读取当前界面方向。`changeScreenmode({mode})` 可强制切换横竖屏；目标方向与当前方向相同时直接返回 `data=true`，非法参数返回 `code=1001,msg="参数无效",data=false`。出包器仍按游戏配置决定初始方向，但最终包同时声明横竖屏能力，以便运行中切换。
+屏幕方向使用 `horizontal` / `vertical` 两个值。`getGameInfo.data.screenMode`、原生请求和公共 Axios 包装的 `Screenmode` Header 都读取当前业务方向；初始值为不可变的出包方向，`changeScreenmode({mode})` 立即更新业务方向并请求旋转，同方向不重复请求。打开福利大厅前先记录 `entryMode`，切至横屏并确认根视图布局后才打开；大厅可用 `getWelfareInfo` 读取本轮入场方向。`closePage`、`closeMiniWindow` 只关闭页面并清理待加载地址，不旋转；`closeWelfarepage({mode,loadPendingGameUrl})` 按合法 `mode` 切屏，在布局稳定后可一次性加载此前由 `changeGameUrl({url,waitCloseWelfarepage:true})` 保存的地址。退出登录恢复出包方向和布局后才展示认证页。所有已打开和新打开的 H5 页面按当前窗口布局，H5 用标准 `resize`、`visualViewport.resize` 适配，不接收 `screenChange`。详见 [JSBridge 清单第 4 节](../JSBridge方法清单_jsbridge.md)。
 
 ### 原生版本更新
 

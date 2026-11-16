@@ -24,6 +24,24 @@ test('注册屏幕方向切换方法并原样发送参数', () => {
   window.QSMH5APP.changeScreenmode({mode: 'horizontal'}, () => {});
   assert.deepEqual(requests[0], {documentID: 'document-one', id: '1', method: 'changeScreenmode', args: {mode: 'horizontal'}});
 });
+test('关闭大厅接口保留 mode 参数', () => {
+  const {window, requests} = make();
+  window.QSMH5APP.closeWelfarepage({mode: 'vertical'}, () => {});
+  assert.deepEqual(requests[0], {documentID: 'document-one', id: '1', method: 'closeWelfarepage', args: {mode: 'vertical'}});
+});
+test('大厅信息与延迟加载参数原样透传', () => {
+  const {window, requests} = make();
+  window.QSMH5APP.getWelfareInfo({}, () => {});
+  window.QSMH5APP.changeGameUrl({url: 'https://fixture.test/game', waitCloseWelfarepage: true}, () => {});
+  window.QSMH5APP.closeWelfarepage({mode: 'vertical', loadPendingGameUrl: true}, () => {});
+  assert.deepEqual(requests.map(x => [x.method, x.args]), [
+    ['getWelfareInfo', {}],
+    ['changeGameUrl', {url: 'https://fixture.test/game', waitCloseWelfarepage: true}],
+    ['closeWelfarepage', {mode: 'vertical', loadPendingGameUrl: true}]
+  ]);
+  assert.equal(window.QSMH5APP.on, undefined);
+  assert.equal(window.__QSMH5APP_NOTIFY__, undefined);
+});
 test('按文档和 id 路由并发回调且最多一次', () => {
   const {window} = make(), results = [];
   window.QSMH5APP.getGameInfo({}, r => results.push(['one', r.data]));

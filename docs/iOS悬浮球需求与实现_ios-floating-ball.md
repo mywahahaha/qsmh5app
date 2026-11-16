@@ -104,3 +104,7 @@ QSM_SIMULATOR_ID=实际设备UUID ios/Scripts/run_tests.sh
 - 使用游戏 92“天尊传奇”的现有图标、横版闪图、Bundle ID `com.un74meng.tzcq` 和最新签名描述文件，生成版本 1.0.1、构建 3 的 Ad Hoc IPA：`ios/artifacts/交付_20261104_天尊传奇_悬浮球贴边_build3/92_com.un74meng.tzcq_1.0.1_3_AdHoc.ipa`。最终严格验签通过；最低系统 iOS 14.0，空渠道包无 `packCode` 目录。SHA-256：`4ffb6192dabfd35d11a73e4c9c1db774a6936b5adc074dcaad89f8253ad084f8`。
 
 截图是本地替身页面的几何验证，真实游戏画面与设备方向仍需用户安装构建 3 后复验。用户保存的游戏 92 构建 2 配置和产物均未覆盖。
+
+## 2026-11-12：福利大厅方向与关闭接口
+
+悬浮球打开福利大厅时，当前为竖屏则先切横屏；已是横屏时不重复请求旋转。`openMiniWindow({page:'web_welfare'})` 同样适用。横屏成为当前业务方向，`getGameInfo.data.screenMode` 与 `Screenmode` Header 同步更新。`closePage` 和 `closeMiniWindow` 仅关闭 H5，不自动恢复方向。福利大厅如需关闭后指定方向，应调用 `closeWelfarepage({mode:'vertical'})` 或 `horizontal`；缺失或非法 `mode` 只关闭。关闭期间悬浮球保持隐藏，方向与布局完成后按初始化配置重定位再显示；加载新游戏时等待新主文档可见。H5 使用标准 viewport 尺寸变化适配，Native 不发送私有方向通知。接口见 [JSBridge 清单](../JSBridge方法清单_jsbridge.md)。上文构建 3 交付与测试记录仍为当时版本。

@@ -24,6 +24,7 @@ __pycache__/
 *.dSYM/
 *.ipa
 .DS_Store
+/iOS游戏打包器.app/
 
 # 签名私钥与包含签名密码的本地操作资料
 *.jks

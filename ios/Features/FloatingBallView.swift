@@ -31,8 +31,8 @@ import ImageIO
         accessibilityTraits = .button
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func layout(in size: CGSize) {
-        guard size != containerSize else { return }
+    func layout(in size: CGSize, resetToConfiguration: Bool = false) {
+        guard resetToConfiguration || size != containerSize else { return }
         containerSize = size
         frame = FloatingBallLayout.frame(configuration: configuration, width: size.width, height: size.height)
         imageView.frame = bounds

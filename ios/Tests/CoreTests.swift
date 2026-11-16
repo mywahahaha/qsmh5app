@@ -280,6 +280,205 @@ struct CapturingTransport: HTTPTransport {
         XCTAssertEqual(ScreenOrientationController.mode(interfaceOrientation: .unknown,
                                                         bounds: .zero, fallback: .vertical), .vertical)
     }
+    func testPackageModeRemainsUnchangedAfterBusinessOrientationChanges() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let info: [String: Any] = ["CFBundleIdentifier": "test.orientation", "CFBundlePackageType": "BNDL",
+                                   "QSMInitialScreenMode": "vertical",
+                                   "UISupportedInterfaceOrientations": ["UIInterfaceOrientationLandscapeRight", "UIInterfaceOrientationPortrait"]]
+        try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            .write(to: folder.appendingPathComponent("Info.plist"))
+        let orientation = ScreenOrientationController(bundle: try XCTUnwrap(Bundle(url: folder)))
+        XCTAssertEqual(orientation.packageMode, .vertical)
+        orientation.change(to: .horizontal, in: nil, root: nil)
+        XCTAssertEqual(orientation.requestedMode, .horizontal)
+        XCTAssertEqual(orientation.packageMode, .vertical)
+    }
+    func testWelfareEntryModeAndDeferredGameNavigationWaitForLayout() async {
+        var mode = ScreenMode.vertical
+        var finishPortraitLayout: CheckedContinuation<Bool, Never>?
+        let backend = StubBackend(fixture(privacy: false))
+        let coordinator = AppCoordinator(identity: identity, policy: policy, backend: backend,
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, packageMode: { .vertical },
+            changeScreenMode: { mode = $0 }, waitForScreenMode: { target in
+                if target == .vertical { return await withCheckedContinuation { finishPortraitLayout = $0 } }
+                return true
+            })
+        await coordinator.start()
+        _ = await call(coordinator, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        var navigations: [String] = []
+        coordinator.onView = { event in
+            if case .show(let page, let navigate) = event, navigate { navigations.append(page.url.absoluteString) }
+        }
+        let opened = await call(coordinator, "openMiniWindow", ["page": "web_welfare"])
+        XCTAssertEqual(opened?.data as? Bool, true)
+        let info = await call(coordinator, "getWelfareInfo", page: "web_welfare")
+        XCTAssertEqual((info?.data as? [String: String])?["entryMode"], "vertical")
+        XCTAssertEqual((info?.data as? [String: String])?["currentMode"], "horizontal")
+        await assertCode(1001, coordinator, "getWelfareInfo")
+        let first = "https://fixture.test/first", last = "https://fixture.test/last"
+        _ = await call(coordinator, "changeGameUrl", ["url": first, "waitCloseWelfarepage": true], page: "web_welfare")
+        _ = await call(coordinator, "changeGameUrl", ["url": last, "waitCloseWelfarepage": true], page: "web_welfare")
+        await assertCode(1001, coordinator, "changeGameUrl", ["url": first, "waitCloseWelfarepage": "true"], page: "web_welfare")
+        await assertCode(1001, coordinator, "closeWelfarepage", ["mode": "vertical", "loadPendingGameUrl": "true"], page: "web_welfare")
+        XCTAssertEqual(mode, .horizontal)
+        XCTAssertTrue(navigations.isEmpty)
+        var headerAtCloseReply: String?
+        let close = Task { () -> BridgeResult? in
+            var result: BridgeResult?
+            await coordinator.handle(method: "closeWelfarepage", args: ["mode": "vertical", "loadPendingGameUrl": true],
+                                     context: context(coordinator, "web_welfare")) { value in
+                result = value; headerAtCloseReply = coordinator.headers["Screenmode"]
+            }
+            return result
+        }
+        guard await waitFor({ finishPortraitLayout != nil }) else { close.cancel(); return }
+        XCTAssertEqual(headerAtCloseReply, "vertical")
+        XCTAssertTrue(navigations.isEmpty)
+        finishPortraitLayout?.resume(returning: true)
+        let closeResult = await close.value
+        XCTAssertEqual(closeResult?.data as? Bool, true)
+        XCTAssertEqual(navigations, [last])
+        let again = await call(coordinator, "closeWelfarepage", ["loadPendingGameUrl": true])
+        XCTAssertEqual(again?.data as? Bool, false)
+        XCTAssertEqual(navigations, [last])
+    }
+    func testOrdinaryWelfareCloseAndImmediateNavigationClearDeferredURL() async {
+        let (sut, _, _, _) = make(privacy: false)
+        await sut.start()
+        _ = await call(sut, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        var navigations: [String] = []
+        sut.onView = { event in
+            if case .show(let page, let navigate) = event, navigate { navigations.append(page.url.absoluteString) }
+        }
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        _ = await call(sut, "changeGameUrl", ["url": "https://fixture.test/stale", "waitCloseWelfarepage": true], page: "web_welfare")
+        _ = await call(sut, "closePage", page: "web_welfare")
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        _ = await call(sut, "closeWelfarepage", ["loadPendingGameUrl": true], page: "web_welfare")
+        XCTAssertTrue(navigations.isEmpty)
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        _ = await call(sut, "changeGameUrl", ["url": "https://fixture.test/stale", "waitCloseWelfarepage": true], page: "web_welfare")
+        _ = await call(sut, "changeGameUrl", ["url": "https://fixture.test/immediate"], page: "web_welfare")
+        _ = await call(sut, "closeWelfarepage", ["loadPendingGameUrl": true])
+        XCTAssertEqual(navigations, ["https://fixture.test/immediate"])
+    }
+    func testDeferredURLIsCommittedBeforeBridgeReplyRunsNextCall() async {
+        var mode = ScreenMode.horizontal
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: StubBackend(fixture(privacy: false)),
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, changeScreenMode: { mode = $0 })
+        await sut.start()
+        _ = await call(sut, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        var navigations: [String] = [], closeResult: BridgeResult?
+        sut.onView = { event in
+            if case .show(let page, let navigate) = event, navigate { navigations.append(page.url.absoluteString) }
+        }
+        await sut.handle(method: "changeGameUrl",
+                         args: ["url": "https://fixture.test/from-reply", "waitCloseWelfarepage": true],
+                         context: context(sut, "web_welfare")) { result in
+            XCTAssertEqual(result.data as? Bool, true)
+            await sut.handle(method: "closeWelfarepage", args: ["loadPendingGameUrl": true],
+                             context: self.context(sut, "web_welfare")) { closeResult = $0 }
+        }
+        XCTAssertEqual(closeResult?.data as? Bool, true)
+        XCTAssertEqual(navigations, ["https://fixture.test/from-reply"])
+    }
+    func testWelfareIsRemovedWhenCloseReplyStartsAnotherScreenTransaction() async {
+        var mode = ScreenMode.horizontal
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: StubBackend(fixture(privacy: false)),
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, changeScreenMode: { mode = $0 })
+        await sut.start()
+        _ = await call(sut, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        await sut.handle(method: "closeWelfarepage", args: ["mode": "vertical"],
+                         context: context(sut, "web_welfare")) { result in
+            XCTAssertEqual(result.data as? Bool, true)
+            _ = await self.call(sut, "changeScreenmode", ["mode": "horizontal"])
+        }
+        let closeAgain = await call(sut, "closeWelfarepage", page: "web_game")
+        XCTAssertEqual(closeAgain?.data as? Bool, false)
+    }
+    func testImmediateGameNavigationSurvivesCallerClosingInReply() async {
+        var mode = ScreenMode.horizontal, callerIsCurrent = true
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: StubBackend(fixture(privacy: false)),
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, changeScreenMode: { mode = $0 })
+        await sut.start()
+        _ = await call(sut, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        var navigations: [String] = []
+        sut.onView = { event in
+            if case .show(let page, let navigate) = event, navigate { navigations.append(page.url.absoluteString) }
+        }
+        let caller = BridgeContext(instance: "web_welfare", epoch: sut.epoch, isCurrent: { callerIsCurrent })
+        await sut.handle(method: "changeGameUrl", args: ["url": "https://fixture.test/immediate-reply"],
+                         context: caller) { result in
+            XCTAssertEqual(result.data as? Bool, true)
+            _ = await self.call(sut, "closePage", page: "web_welfare")
+            callerIsCurrent = false
+        }
+        XCTAssertEqual(navigations, ["https://fixture.test/immediate-reply"])
+    }
+    func testLogoutRestoresPackageModeBeforeShowingLogin() async {
+        var mode = ScreenMode.horizontal
+        var finishLayout: CheckedContinuation<Bool, Never>?
+        let coordinator = AppCoordinator(identity: identity, policy: policy, backend: StubBackend(fixture(privacy: false)),
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, packageMode: { .vertical }, changeScreenMode: { mode = $0 },
+            waitForScreenMode: { target in
+                if target == .vertical { return await withCheckedContinuation { finishLayout = $0 } }
+                return true
+            })
+        await coordinator.start()
+        _ = await call(coordinator, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        var loginShown = false
+        coordinator.onView = { event in
+            if case .show(let page, _) = event, page.instance == "web_login" { loginShown = true }
+        }
+        let logout = Task { await call(coordinator, "logout") }
+        guard await waitFor({ finishLayout != nil }) else { logout.cancel(); return }
+        XCTAssertEqual(mode, .vertical)
+        XCTAssertEqual(coordinator.headers["Screenmode"], "vertical")
+        XCTAssertFalse(loginShown)
+        finishLayout?.resume(returning: true)
+        let logoutResult = await logout.value
+        XCTAssertEqual(logoutResult?.data as? Bool, true)
+        XCTAssertTrue(loginShown)
+    }
+    func testLogoutBackgroundResumeStillWaitsForPackageLayout() async {
+        var mode = ScreenMode.horizontal
+        var orientationRequests = 0
+        var layoutWaiters: [CheckedContinuation<Bool, Never>] = []
+        let coordinator = AppCoordinator(identity: identity, policy: policy, backend: StubBackend(fixture(privacy: false)),
+            repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: { mode }, packageMode: { .vertical },
+            stageScreenMode: { mode = $0 }, applyStagedScreenMode: { orientationRequests += 1 },
+            waitForScreenMode: { _ in await withCheckedContinuation { layoutWaiters.append($0) } })
+        await coordinator.start()
+        _ = await call(coordinator, "notifyLoginSuccess", ["accountToken": "token"], page: "web_login")
+        var loginShown = false
+        coordinator.onView = { event in
+            if case .show(let page, _) = event, page.instance == "web_login" { loginShown = true }
+        }
+        let logout = Task { await call(coordinator, "logout") }
+        guard await waitFor({ layoutWaiters.count == 1 }) else { logout.cancel(); return }
+        coordinator.enteredBackground()
+        layoutWaiters.removeFirst().resume(returning: true)
+        _ = await logout.value
+        XCTAssertFalse(loginShown); XCTAssertEqual(coordinator.phase, .authenticating)
+        coordinator.enteredForeground()
+        guard await waitFor({ layoutWaiters.count == 1 }) else { return }
+        XCTAssertEqual(orientationRequests, 2)
+        XCTAssertFalse(loginShown)
+        layoutWaiters.removeFirst().resume(returning: true)
+        guard await waitFor({ loginShown }) else { return }
+        XCTAssertEqual(coordinator.phase, .login)
+    }
     func testChannelDirectoryFeedsBridgeAndHTTPHeadersBeforeAndAfterConsent() async throws {
         let payload = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: payload) }
@@ -291,7 +490,7 @@ struct CapturingTransport: HTTPTransport {
         let channelIdentity = try RuntimeConfiguration.load(bundle:XCTUnwrap(Bundle(url:app))).identity
         let backend = StubBackend(fixture()), vault = MemoryVault()
         let sut = AppCoordinator(identity: channelIdentity, policy: policy, backend: backend,
-            repository: MemoryRepository(), vault: vault, gateway: UnavailableAuthGateway())
+            repository: MemoryRepository(), vault: vault, gateway: UnavailableAuthGateway(), screenMode: { .horizontal })
         await sut.start()
         XCTAssertEqual(backend.requests.first?["Packagecode"], "1-218")
         let before = await call(sut, "getGameInfo", page: "web_agreement")

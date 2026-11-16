@@ -44,9 +44,19 @@ import UIKit
                 repository: state, vault: vault, gateway: gateway, initialGameURL: config.initialGameURL,
                 notchScreen: { [weak self] in NotchScreenDetector.isNotched(window: self?.window) },
                 screenMode: { [weak self] in self?.orientation.currentMode(in: self?.window) ?? .vertical },
+                packageMode: { [weak self] in self?.orientation.packageMode ?? .vertical },
                 changeScreenMode: { [weak self] mode in
                     guard let self else { return }
                     self.orientation.change(to: mode, in: self.window, root: self.root)
+                },
+                stageScreenMode: { [weak self] mode in self?.orientation.stage(to: mode) },
+                applyStagedScreenMode: { [weak self] in
+                    guard let self else { return }
+                    self.orientation.applyStaged(in: self.window, root: self.root)
+                },
+                waitForScreenMode: { [weak self] mode in
+                    guard let self else { return false }
+                    return await self.root?.waitForLayout(mode: mode) ?? false
                 },
                 clearWebData: RootViewController.clearWebData)
             let reset: (() async throws -> Void)? = config.resetLocalState ? {
@@ -79,6 +89,7 @@ import UIKit
 }
 
 @MainActor final class ScreenOrientationController {
+    let packageMode: ScreenMode
     private(set) var requestedMode: ScreenMode
     var supportedInterfaceOrientations: UIInterfaceOrientationMask {
         requestedMode == .horizontal ? .landscape : .portrait
@@ -86,11 +97,12 @@ import UIKit
     init(bundle: Bundle = .main) {
         if let value = bundle.object(forInfoDictionaryKey: "QSMInitialScreenMode") as? String,
            let mode = ScreenMode(rawValue: value) {
-            requestedMode = mode
+            packageMode = mode
         } else {
             let first = (bundle.object(forInfoDictionaryKey: "UISupportedInterfaceOrientations") as? [String])?.first
-            requestedMode = first == "UIInterfaceOrientationPortrait" ? .vertical : .horizontal
+            packageMode = first == "UIInterfaceOrientationPortrait" ? .vertical : .horizontal
         }
+        requestedMode = packageMode
     }
     static func mode(interfaceOrientation: UIInterfaceOrientation, bounds: CGSize, fallback: ScreenMode) -> ScreenMode {
         if interfaceOrientation.isLandscape { return .horizontal }
@@ -100,19 +112,29 @@ import UIKit
         return fallback
     }
     func currentMode(in window: UIWindow?) -> ScreenMode {
-        let detected = Self.mode(interfaceOrientation: window?.windowScene?.interfaceOrientation ?? .unknown,
-                                 bounds: window?.bounds.size ?? .zero, fallback: requestedMode)
-        // 启动和转屏动画期间系统可能短暂报告旧方向；业务状态以已请求且受控制器约束的方向为准。
-        return detected == requestedMode ? detected : requestedMode
+        // 转屏动画期间仍使用已请求的业务方向，供 Bridge 和请求 Header 同步读取。
+        requestedMode
     }
     func change(to mode: ScreenMode, in window: UIWindow?, root: UIViewController?) {
+        guard stage(to: mode) else { return }
+        applyStaged(in: window, root: root)
+    }
+    @discardableResult func stage(to mode: ScreenMode) -> Bool {
+        guard requestedMode != mode else { return false }
         requestedMode = mode
-        if #available(iOS 16.0, *), let windowScene = window?.windowScene {
+        return true
+    }
+    func applyStaged(in window: UIWindow?, root: UIViewController?) {
+        applyOrientation(in: window, root: root)
+    }
+    private func applyOrientation(in window: UIWindow?, root: UIViewController?) {
+        guard let window else { return }
+        if #available(iOS 16.0, *), let windowScene = window.windowScene {
             root?.setNeedsUpdateOfSupportedInterfaceOrientations()
             let preferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: supportedInterfaceOrientations)
             windowScene.requestGeometryUpdate(preferences) { _ in }
         } else {
-            let target: UIInterfaceOrientation = mode == .horizontal ? .landscapeRight : .portrait
+            let target: UIInterfaceOrientation = requestedMode == .horizontal ? .landscapeRight : .portrait
             UIDevice.current.setValue(target.rawValue, forKey: "orientation")
             UIViewController.attemptRotationToDeviceOrientation()
         }

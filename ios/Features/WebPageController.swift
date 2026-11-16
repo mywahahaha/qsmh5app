@@ -70,8 +70,8 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         webView.accessibilityIdentifier = instance
         view = UIView(); view.backgroundColor = .clear; view.clipsToBounds = true
         webView.frame = view.bounds; webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]; view.addSubview(webView)
-        navigate(spec.url)
     }
+    func start() { navigate(spec.url) }
     func update(_ page: PageSpec, navigate: Bool = false) {
         spec = PageSpec(instance: page.instance, url: navigate ? page.url : spec.url, width: page.width,
                         height: page.height, left: page.left, top: page.top)
@@ -159,7 +159,9 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
             await coordinator.handle(method: method, args: object["args"] ?? NSNull(), context: context) { [weak self] result in
                 guard let self = self, self.active, self.documentID == stamp else { return }
                 guard let script = BridgeCallbackScript.make(documentID: stamp, id: id, result: result) else { return }
-                self.webView.evaluateJavaScript(script, completionHandler: nil)
+                await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                    self.webView.evaluateJavaScript(script) { _, _ in continuation.resume() }
+                }
             }
         }
     }

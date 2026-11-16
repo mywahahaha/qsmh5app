@@ -324,12 +324,13 @@ QSMH5APP.closeMiniWindow({ page: "web_welfare" }, function (result) {
 
 #### `closeWelfarepage`
 
-- 说明：Android 关闭福利大厅专用接口，固定关闭 `web_welfare`。先关闭页面，再按合法 `mode` 请求屏幕方向切换；方向和宿主布局稳定后，可选择加载此前由 `changeGameUrl` 延迟保存的游戏地址。
+- 说明：关闭福利大厅专用接口，固定关闭 `web_welfare`。先关闭页面，再按合法 `mode` 请求屏幕方向切换；两端在方向和宿主布局稳定后，可选择加载此前由 `changeGameUrl` 延迟保存的游戏地址。
 - 参数：
   - `mode`：可传 `horizontal` 或 `vertical`。缺失、非字符串或其他值时仍正常关闭大厅，但不切换方向，也不返回参数错误。
-  - `loadPendingGameUrl`：可选布尔值，默认 `false`。`false` 表示纯关闭并清除历史待加载地址，不重载游戏；`true` 表示在方向和宿主布局稳定后一次性消费待加载地址。没有待加载地址时不得重载当前游戏。
+  - `loadPendingGameUrl`：可选布尔值，默认 `false`。`false` 表示纯关闭并清除历史待加载地址，不重载游戏；`true` 表示在方向和宿主布局稳定后一次性消费待加载地址。没有待加载地址时不得重载当前游戏。其他类型返回参数错误。
 - 返回：`Result.data` 为大厅是否实际关闭成功。方向切换结果不改变本次关闭结果。
 - 注意：本方法名大小写固定为 `closeWelfarepage`。`closePage` 或 `closeMiniWindow` 只关闭 H5，不旋转、不加载待加载地址，并会清除大厅关联的历史待加载地址。
+- 不依赖调用方实例；大厅未打开时返回 `data=false`，合法 `mode` 仍更新业务方向。
 
 ```js
 QSMH5APP.closeWelfarepage({
@@ -482,7 +483,7 @@ document.getElementById("open-game").addEventListener("click", function () {
 
 ## 4. H5 屏幕适配
 
-Android 在实际方向和宿主尺寸稳定后，会按当前可见区域重新布局所有仍打开的 H5 WebView；方向切换后新打开的页面和 `changeGameUrl` 加载的新文档也按当前实际方向布局。Native 不发送私有方向通知。
+Android 与 iOS 在实际方向和宿主尺寸稳定后，会按当前可见区域重新布局所有仍打开的 H5 WebView；方向切换后新打开的页面和 `changeGameUrl` 加载的新文档也按当前实际方向布局。Native 不发送私有方向通知。
 
 H5 应依赖标准视口变化事件重新计算 Canvas、WebGL、rem 和横竖屏组件布局：
 
@@ -504,6 +505,8 @@ if (viewportObserver) viewportObserver.observe(document.documentElement);
 ```
 
 页面销毁时应移除 `resize` 监听并断开 `ResizeObserver`。完整 Vue2 示例见 `示例/vue2-jsbridge-demo.html`。
+
+首次业务方向可读取 `getGameInfo.data.screenMode`；H5 的布局更新应以当前 viewport 尺寸为准。iOS 不提供 `QSMH5APP.on/off` 或 `screenChange`。
 
 ## 5. 返回码定义
 
@@ -534,10 +537,10 @@ if (viewportObserver) viewportObserver.observe(document.documentElement);
 - `getGameInfo.deviceType` 在 iOS 为 `ios`；`packageCode` 从安装包 `.app/packCode/渠道目录名` 读取，未找到时为 `""`；`screenMode` 与原生/H5 请求的 `Screenmode` Header 使用同一当前方向。详见第 8.2 节。隐私同意前设备码和 Token 为空；设备码使用应用内随机安装标识的 MD5 格式，具体后端业务兼容仍需后续设备联调。
 - `agreePrivacyPolicy` / `rejectPrivacyPolicy` 仅当前隐私选择流程的 `web_agreement` 可调用，成功均回 `Result`、`data={}`。iOS 拒绝后显示原生隐私说明和重新选择入口，不调用退出进程。
 - `notifyLoginSuccess` 仅当前登录流程的 `web_login` 可调用；安全持久化成功并送达回调后才切游戏。写入失败返回 `9999`、`data=false`。
-- 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、changeGameUrl、changeScreenmode 及通用存储。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
+- 已支持 Token/游戏信息、logout、配置内游戏/福利窗口、closePage、closeWelfarepage、changeGameUrl、changeScreenmode、getWelfareInfo 及通用存储。打开大厅前切横屏；专用关闭可指定方向，并在布局稳定后一次性加载待处理游戏地址。退出时恢复出包方向后再登录。iOS `changeGameUrl` 比 Android 的主机规则更严格：协议、主机、端口都须与游戏可信 origin 相同。
 - `requestPhoneLogin` 在关闭时返回 `3003`；开启但方案/SDK/宿主不可用时返回 `3001` 并保留/恢复 H5。展示成功只回一次 `code=0,data=true`，兑换成功由原生独立处理，不再次回调原请求。
 - 已支持 `setFloatingBall` 的显隐/激活、纵向拖动、点击福利窗口、福利覆盖后恢复，以及心跳 `floating_ball` 同步；心跳运营窗口清单 `popup_pages` 尚未接入。
-- 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理。
+- 角色和第三方应用能力尚未完成，返回非零错误，不按成功处理。iOS 不发送私有方向通知。
 
 ### revokePrivacyPolicy（iOS）
 
@@ -600,15 +603,17 @@ else window.addEventListener('QSMH5APPReady', initializeH5Bridge, {once: true});
 | `requestPhoneLogin` | 展示成功 `data=true`，关闭返回 `3003` | 相同关键语义；真实 iOS 取号尚待配置和设备联调 | 通用；成功只代表授权页展示，不代表登录完成 |
 | `logout` | `data=true`，保留隐私及通用存储 | 同语义，旧会话失效 | 通用；由原生继续登录流程 |
 | `saveLocalStorage` / `getLocalStorage` | 保存布尔结果、读取字符串 | 同结构；本次对齐 JS 中非字符串/数字值的归一化 | 通用；高精度、极大或极小数值建议先传字符串，避免两端原生数值格式差异 |
-| `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 本次对齐成功 `data=true`；只支持游戏阶段的 `web_game` / `web_welfare` | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
-| `closeWelfarepage` | 已实现；关闭大厅后按合法 `mode` 切方向，`loadPendingGameUrl=true` 时稳定后消费待加载地址 | 当前未纳入本轮 iOS 变更 | Android 可使用；纯关闭显式传 `false`，进入新游戏传 `true` |
-| `closePage` | 关闭当前实例，成功 `data=true` | 本次对齐成功 `data=true`；仅游戏/福利实例，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
+| `openMiniWindow` / `closeMiniWindow` | 按配置操作窗口，成功 `data=true` | 只支持游戏阶段的 `web_game` / `web_welfare`；打开福利大厅默认切横屏，关闭不旋转 | 福利窗口调用通用；不要在 iOS 打开协议/登录窗口 |
+| `closeWelfarepage` | 已实现；关闭大厅后按合法 `mode` 切方向，`loadPendingGameUrl=true` 时稳定后消费待加载地址 | 已实现同一参数与方向、布局、待加载地址时序 | 大厅进入游戏时两端使用相同调用顺序 |
+| `closePage` | 关闭当前实例，成功 `data=true` | 仅游戏/福利实例；关闭福利不旋转，关闭游戏显示原生重新进入入口 | 游戏/福利页调用通用；其他页不要依赖此功能 |
 | `changeGameUrl` | 绝对 HTTP/HTTPS、与游戏配置同主机；支持立即加载或单槽延迟加载 | HTTPS 且协议、主机、端口均与配置游戏来源一致 | Android 大厅进入游戏先延迟保存，再由专用关闭消费；成功仅表示接受请求 |
 | `changeScreenmode` | 已实现横竖屏强制切换和幂等成功返回 | 已实现横竖屏强制切换和幂等成功返回 | 参数只接受 `horizontal` / `vertical` |
 | `setFloatingBall` | 已实现，福利置顶临时隐藏 | 已实现，同显隐/激活及恢复规则 | 调用通用；传布尔 `show/active`，缺初始化配置时 `code=0,data=false` |
 | `saveGameRole` / `getGameRole` | 已实现 | 尚未实现，返回非零错误 | 当前按 `deviceType` 隐藏 iOS 相关入口或提供 H5 自身降级 |
 | `isAppInstalled` / `openApp` | 接受安卓包名，受系统可见性限制 | 尚未实现，返回非零错误 | 当前仅 Android 使用；不能把安卓包名直接用于 iOS |
 | `revokePrivacyPolicy` | 当前注入器没有此方法 | 已实现原生确认和清理 | iOS 专属；先判断方法存在再调用 |
+| `getWelfareInfo` | 已实现 | 已实现 | 当前有效大厅文档读取本轮入场方向 |
+| `on` / `off` | 空实现 | 不提供 | 两端通过标准 viewport 变化适配方向 |
 
 iOS 即使尚未实现某项业务，也可能保留同名函数并回非零 `code`，因此仅用 `typeof QSMH5APP.saveGameRole === 'function'` 不能判断功能已可用。未知/未实现能力的错误码目前两端也不完全相同，统一以非零失败处理；不要将 `data=false` 一概当作业务不存在或应用未安装。
 

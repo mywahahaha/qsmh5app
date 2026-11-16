@@ -44,7 +44,11 @@ struct BridgeContext {
     private let initialGameURL: URL?
     private let notchScreen: @MainActor () -> Bool
     private let screenModeProvider: @MainActor () -> ScreenMode
+    private let packageModeProvider: @MainActor () -> ScreenMode
     private let changeScreenMode: @MainActor (ScreenMode) -> Void
+    private let stageScreenMode: (@MainActor (ScreenMode) -> Void)?
+    private let applyStagedScreenMode: (@MainActor () -> Void)?
+    private let waitForScreenMode: @MainActor (ScreenMode?) async -> Bool
     var onView: ((ViewEvent) -> Void)?
     var confirmRevocation: (@MainActor () async -> Bool)?
     private(set) var epoch: UInt64 = 0
@@ -63,25 +67,45 @@ struct BridgeContext {
     private var floatingBallController: FloatingBallController?
     private var floatingBallHeartbeat: FloatingBallHeartbeat?
     private var gamePageReady = false
+    private var floatingBallWelfareOpening = false
+    private var pendingWelfareOpen: UUID?
+    private var welfareEntryMode: ScreenMode?
+    private var pendingGameURL: URL?
+    private var pendingWelfareClose: UUID?
+    private var pendingLogoutRestore: UUID?
+    private var logoutRestoreWaiting = false
+    private var welfareCloseInProgress = false
     private var windowStack: [String] = []
     private var foreground = true
     var floatingBallState: FloatingBallState { floatingBallController?.state ?? .hidden }
     var keepScreenAwake: Bool { foreground && phase == .game && windowStack.contains("web_game") }
     private var notchScreenValue: Int { notchScreen() ? 1 : 0 }
     private var screenMode: ScreenMode { screenModeProvider() }
+    private func stageBusinessMode(_ mode: ScreenMode) {
+        if let stageScreenMode { stageScreenMode(mode) }
+        else { changeScreenMode(mode) }
+    }
+    private func applyStagedMode() { applyStagedScreenMode?() }
 
     init(identity: GameIdentity, policy: URLPolicy, backend: Backend, repository: StateRepository,
          vault: TokenVault, gateway: AuthGateway, initialGameURL: URL? = nil,
          notchScreen: @escaping @MainActor () -> Bool = { false },
          screenMode: @escaping @MainActor () -> ScreenMode = { .vertical },
+         packageMode: @escaping @MainActor () -> ScreenMode = { .vertical },
          changeScreenMode: @escaping @MainActor (ScreenMode) -> Void = { _ in },
+         stageScreenMode: (@MainActor (ScreenMode) -> Void)? = nil,
+         applyStagedScreenMode: (@MainActor () -> Void)? = nil,
+         waitForScreenMode: @escaping @MainActor (ScreenMode?) async -> Bool = { _ in true },
          initializationPause: @escaping @MainActor (TimeInterval) async throws -> Void = { seconds in
              try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
          }, clearWebData: @escaping @MainActor () async -> Void = {}) {
         self.identity = identity; self.policy = policy; self.backend = backend
         self.repository = repository; self.vault = vault; self.gateway = gateway; self.clearWebData = clearWebData
         self.initialGameURL = initialGameURL; self.notchScreen = notchScreen
-        self.screenModeProvider = screenMode; self.changeScreenMode = changeScreenMode
+        self.screenModeProvider = screenMode; self.packageModeProvider = packageMode
+        self.changeScreenMode = changeScreenMode
+        self.stageScreenMode = stageScreenMode; self.applyStagedScreenMode = applyStagedScreenMode
+        self.waitForScreenMode = waitForScreenMode
         self.initializationPause = initializationPause
     }
     var headers: [String: String] {
@@ -91,6 +115,10 @@ struct BridgeContext {
     private func save(_ state: StoredState) throws { try repository.save(state); stored = state }
     private func invalidate() {
         initializationTask?.cancel(); initializationTask = nil
+        pendingWelfareOpen = nil; welfareEntryMode = nil; pendingGameURL = nil
+        pendingWelfareClose = nil; pendingLogoutRestore = nil; logoutRestoreWaiting = false
+        welfareCloseInProgress = false
+        floatingBallWelfareOpening = false
         epoch &+= 1; authID = nil; authTask?.cancel(); authTask = nil; gateway.cancel()
         floatingBallHeartbeat?.stop(); floatingBallController?.resetSession(); gamePageReady = false
         windowStack.removeAll(); refreshFloatingBall()
@@ -241,10 +269,16 @@ struct BridgeContext {
     }
     private func removePage(_ name: String) {
         windowStack.removeAll { $0 == name }
-        if name == "web_game" { gamePageReady = false; floatingBallController?.resetSession() }
+        if name == "web_welfare" { welfareEntryMode = nil; pendingWelfareOpen = nil }
+        if name == "web_game" {
+            gamePageReady = false; floatingBallController?.resetSession()
+            pendingGameURL = nil; pendingWelfareClose = nil; welfareCloseInProgress = false
+        }
         onView?(.remove(name)); refreshFloatingBall()
     }
     private func removeAllPages() {
+        pendingGameURL = nil; pendingWelfareOpen = nil; welfareEntryMode = nil
+        pendingWelfareClose = nil; welfareCloseInProgress = false
         windowStack.removeAll(); gamePageReady = false; floatingBallController?.resetSession()
         floatingBallHeartbeat?.stop(); onView?(.removeAll); refreshFloatingBall()
     }
@@ -263,7 +297,8 @@ struct BridgeContext {
         refreshFloatingBall()
     }
     private func refreshFloatingBall() {
-        let ready = gamePageReady && phase == .game && !token.isEmpty && stored.consent == .agreed && windowStack.contains("web_game")
+        let ready = gamePageReady && phase == .game && !token.isEmpty && stored.consent == .agreed &&
+            windowStack.contains("web_game") && !welfareCloseInProgress && pendingWelfareOpen == nil
         floatingBallController?.sessionReady = ready
         floatingBallController?.welfareAboveGame = (windowStack.firstIndex(of: "web_welfare") ?? -1) > (windowStack.firstIndex(of: "web_game") ?? -1)
         let state = floatingBallState
@@ -279,9 +314,38 @@ struct BridgeContext {
         guard context.instance == "web_game", context.epoch == epoch, context.isCurrent(), phase == .game else { return }
         gamePageReady = true; refreshFloatingBall()
     }
-    func openWelfareFromFloatingBall() {
-        guard foreground, floatingBallState.visible else { return }
+    @discardableResult private func openWelfare(requireVisibleBall: Bool = false) async -> Bool {
+        guard phase == .game, foreground, configuration?.pages["web_welfare"] != nil else { return false }
+        if windowStack.last == "web_welfare" { return true }
+        if pendingWelfareOpen != nil { return true }
+        guard !requireVisibleBall || floatingBallState.visible else { return false }
+        let stamp = epoch
+        let id = UUID(), entryMode = screenMode
+        pendingWelfareClose = nil; welfareCloseInProgress = false
+        pendingWelfareOpen = id; welfareEntryMode = entryMode; pendingGameURL = nil
+        refreshFloatingBall()
+        defer {
+            if pendingWelfareOpen == id {
+                pendingWelfareOpen = nil
+                welfareEntryMode = nil
+                refreshFloatingBall()
+            }
+        }
+        if screenMode != .horizontal {
+            changeScreenMode(.horizontal)
+        }
+        guard await waitForScreenMode(.horizontal), stamp == epoch, pendingWelfareOpen == id,
+              phase == .game, foreground, screenMode == .horizontal else { return false }
+        pendingWelfareOpen = nil
         show("web_welfare")
+        return true
+    }
+    func openWelfareFromFloatingBall() async {
+        guard phase == .game, foreground, floatingBallState.visible, !floatingBallWelfareOpening,
+              configuration?.pages["web_welfare"] != nil else { return }
+        floatingBallWelfareOpening = true
+        defer { floatingBallWelfareOpening = false }
+        await openWelfare(requireVisibleBall: true)
     }
     private func showLogin() { phase = .login; show("web_login") }
     private func enterGame() {
@@ -289,12 +353,36 @@ struct BridgeContext {
     }
     func enteredBackground() {
         foreground = false; refreshFloatingBall()
+        if pendingLogoutRestore != nil { return }
         guard authID != nil || phase == .authenticating else { return }
         invalidate(); resumeToLogin = true
     }
     func enteredForeground() {
         foreground = true; refreshFloatingBall()
+        if let id = pendingLogoutRestore, phase == .authenticating {
+            applyStagedMode()
+            if !logoutRestoreWaiting {
+                let stamp = epoch, target = packageModeProvider()
+                Task { await continueLogoutRestore(id: id, stamp: stamp, target: target) }
+            }
+            return
+        }
         if resumeToLogin { resumeToLogin = false; showLogin() }
+    }
+    private func continueLogoutRestore(id: UUID, stamp: UInt64, target: ScreenMode) async {
+        guard !logoutRestoreWaiting else { return }
+        logoutRestoreWaiting = true
+        defer { logoutRestoreWaiting = false }
+        let layoutReady = await waitForScreenMode(target)
+        guard epoch == stamp, pendingLogoutRestore == id, phase == .authenticating else { return }
+        guard foreground else { return }
+        guard layoutReady else {
+            pendingLogoutRestore = nil; phase = .failed
+            onView?(.status(.failure("退出后屏幕方向未完成，请重新初始化")))
+            return
+        }
+        pendingLogoutRestore = nil
+        await beginLogin(stamp: stamp, useSavedToken: false)
     }
     private func performOnekey(reply: Reply?) async {
         guard let auth = configuration?.auth, auth.enabled else {
@@ -332,13 +420,17 @@ struct BridgeContext {
         let object = args as? [String: Any]
         let falseMethods: Set<String> = ["notifyLoginSuccess", "logout", "changeGameUrl", "changeScreenmode", "saveLocalStorage", "revokePrivacyPolicy", "setFloatingBall"]
         func bad() -> BridgeResult { .failure(1001, "参数或当前页面状态无效", data: method == "getLocalStorage" ? "" : (falseMethods.contains(method) ? false : NSNull())) }
-        if method != "saveLocalStorage", method != "changeScreenmode", object == nil { await reply(bad()); return }
+        if method != "saveLocalStorage", method != "changeScreenmode", method != "closeWelfarepage", object == nil { await reply(bad()); return }
         do {
             switch method {
             case "getGameInfo":
                 await reply(.ok(["gameId": identity.gameID, "gameVersion": identity.version, "packageCode": identity.packageCode,
                                  "deviceType": "ios", "deviceCode": stored.deviceCode, "accountToken": stored.consent == .agreed ? token : "",
                                  "notchScreen": notchScreenValue, "screenMode": screenMode.rawValue]))
+            case "getWelfareInfo":
+                guard phase == .game, context.instance == "web_welfare", windowStack.last == "web_welfare",
+                      let entryMode = welfareEntryMode else { await reply(bad()); return }
+                await reply(.ok(["entryMode": entryMode.rawValue, "currentMode": screenMode.rawValue]))
             case "getAccountToken": await reply(.ok(["accountToken": stored.consent == .agreed ? token : ""]))
             case "agreePrivacyPolicy":
                 guard phase == .privacy, context.instance == "web_agreement" else { await reply(bad()); return }
@@ -370,34 +462,104 @@ struct BridgeContext {
                 guard stored.consent == .agreed else { await reply(bad()); return }
                 try vault.write(nil); token = ""
                 invalidate(); let stamp = epoch
+                phase = .authenticating; updateChecked = true
+                let id = UUID(); pendingLogoutRestore = id
+                let packageMode = packageModeProvider()
+                let needsRotation = screenMode != packageMode
+                if needsRotation { stageBusinessMode(packageMode) }
                 await reply(.ok(true)); guard epoch == stamp else { return }
-                removeAllPages(); await beginLogin(stamp: stamp, useSavedToken: false)
+                removeAllPages()
+                if needsRotation { applyStagedMode() }
+                await continueLogoutRestore(id: id, stamp: stamp, target: packageMode)
             case "setFloatingBall":
                 guard let show = JSON.boolean(object?["show"]), let active = JSON.boolean(object?["active"]) else { await reply(bad()); return }
                 await reply(.ok(setFloatingBall(show: show, active: active)))
             case "openMiniWindow":
                 guard phase == .game, let name = object?["page"] as? String,
                       ["web_game", "web_welfare"].contains(name), configuration?.pages[name] != nil else { await reply(bad()); return }
-                show(name); await reply(.ok(true))
+                if name == "web_welfare" { await reply(.ok(await openWelfare())) }
+                else { show(name); await reply(.ok(true)) }
             case "closeMiniWindow", "closePage":
                 let name = method == "closePage" ? context.instance : (object?["page"] as? String ?? "")
                 guard phase == .game, ["web_game", "web_welfare"].contains(name), configuration?.pages[name] != nil else { await reply(bad()); return }
                 await reply(.ok(true))
                 guard context.epoch == epoch, context.isCurrent() else { return }
                 if name == "web_game" { invalidate(); phase = .closed; removeAllPages(); onView?(.status(.closed)) }
-                else { removePage(name) }
+                else { pendingGameURL = nil; pendingWelfareClose = nil; welfareCloseInProgress = false; removePage(name) }
+            case "closeWelfarepage":
+                guard phase == .game, configuration?.pages["web_welfare"] != nil else {
+                    await reply(bad()); return
+                }
+                let loadPending: Bool
+                if let raw = object?["loadPendingGameUrl"] {
+                    guard let value = JSON.boolean(raw) else { await reply(bad()); return }
+                    loadPending = value
+                } else { loadPending = false }
+                let mode = (object?["mode"] as? String).flatMap(ScreenMode.init(rawValue:))
+                let closed = windowStack.contains("web_welfare")
+                let gameURL = loadPending ? pendingGameURL : nil
+                pendingGameURL = nil
+                pendingWelfareOpen = nil; welfareEntryMode = nil
+                let needsRotation = mode != nil && screenMode != mode
+                if let mode, needsRotation { stageBusinessMode(mode) }
+                let id = UUID(), stamp = epoch
+                pendingWelfareClose = closed ? id : nil
+                welfareCloseInProgress = closed
+                refreshFloatingBall()
+                await reply(.ok(closed))
+                guard epoch == stamp else { return }
+                if !closed {
+                    if needsRotation { applyStagedMode() }
+                    return
+                }
+                removePage("web_welfare")
+                guard pendingWelfareClose == id else { return }
+                if needsRotation { applyStagedMode() }
+                guard await waitForScreenMode(mode), epoch == stamp, pendingWelfareClose == id,
+                      phase == .game else {
+                    if epoch == stamp, pendingWelfareClose == id {
+                        pendingWelfareClose = nil; welfareCloseInProgress = false; refreshFloatingBall()
+                    }
+                    return
+                }
+                pendingWelfareClose = nil
+                if let gameURL {
+                    gamePageReady = false
+                    welfareCloseInProgress = false
+                    refreshFloatingBall()
+                    guard let game = configuration?.pages["web_game"] else { return }
+                    presentPage(PageSpec(instance: game.instance, url: gameURL, width: game.width,
+                                         height: game.height, left: game.left, top: game.top), navigate: true)
+                } else {
+                    welfareCloseInProgress = false; refreshFloatingBall()
+                }
             case "changeGameUrl":
                 guard phase == .game, let raw = object?["url"] as? String, let url = URL(string: raw),
                       let game = configuration?.pages["web_game"], policy.allows(url), Origin(url) == Origin(game.url) else {
                     await reply(bad()); return
                 }
+                let wait: Bool
+                if let raw = object?["waitCloseWelfarepage"] {
+                    guard let value = JSON.boolean(raw) else { await reply(bad()); return }
+                    wait = value
+                } else { wait = false }
+                if wait {
+                    pendingGameURL = url
+                    await reply(.ok(true))
+                    return
+                }
+                pendingGameURL = nil; pendingWelfareClose = nil; welfareCloseInProgress = false
+                gamePageReady = false; refreshFloatingBall()
                 await reply(.ok(true))
-                guard context.epoch == epoch, context.isCurrent() else { return }
+                guard context.epoch == epoch else { return }
                 presentPage(PageSpec(instance: game.instance, url: url, width: game.width, height: game.height, left: game.left, top: game.top), navigate: true)
             case "changeScreenmode":
                 guard let value = object?["mode"] as? String, let mode = ScreenMode(rawValue: value) else {
                     await reply(.failure(1001, "参数无效", data: false)); return
                 }
+                pendingWelfareOpen = nil; welfareEntryMode = nil
+                pendingWelfareClose = nil; welfareCloseInProgress = false
+                refreshFloatingBall()
                 if screenMode != mode { changeScreenMode(mode) }
                 await reply(.ok(true))
             case "saveLocalStorage":

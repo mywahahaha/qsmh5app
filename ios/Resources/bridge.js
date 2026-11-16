@@ -33,11 +33,9 @@
   }
   var bridge = {};
   ['agreePrivacyPolicy','rejectPrivacyPolicy','revokePrivacyPolicy','requestPhoneLogin','notifyLoginSuccess',
-   'getAccountToken','getGameInfo','logout','openMiniWindow','closeMiniWindow','changeGameUrl','changeScreenmode','closePage',
+   'getAccountToken','getGameInfo','getWelfareInfo','logout','openMiniWindow','closeMiniWindow','changeGameUrl','changeScreenmode','closePage','closeWelfarepage',
    'saveLocalStorage','getLocalStorage','saveGameRole','getGameRole','setFloatingBall','isAppInstalled','openApp']
     .forEach(function (method) { bridge[method] = function (args, callback) { invoke(method, args, callback); }; });
-  bridge.on = function () {};
-  bridge.off = function () {};
   window.QSMH5APP = bridge;
   window.addEventListener('pagehide', function () { callbacks = Object.create(null); });
   window.dispatchEvent(new Event('QSMH5APPReady'));

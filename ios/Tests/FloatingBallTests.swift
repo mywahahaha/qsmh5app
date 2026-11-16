@@ -60,7 +60,10 @@ import ImageIO
         hidden.setRuntimeState(show: true, active: true); hidden.resetSession(); hidden.sessionReady = true
         XCTAssertFalse(hidden.state.visible)
     }
-    func make(show: Bool = true, include: Bool = true) -> AppCoordinator {
+    func make(show: Bool = true, include: Bool = true,
+              screenMode: @escaping @MainActor () -> ScreenMode = { .horizontal },
+              changeScreenMode: @escaping @MainActor (ScreenMode) -> Void = { _ in },
+              waitForScreenMode: @escaping @MainActor (ScreenMode?) async -> Bool = { _ in true }) -> AppCoordinator {
         let pages = Dictionary(uniqueKeysWithValues: ["agreement", "login", "game", "welfare"].map {
             ($0, ["instance": "web_" + $0, "url": "https://fixture.test/" + $0, "width": "100%", "height": "100%", "left": 0, "top": 0] as [String: Any])
         })
@@ -68,12 +71,13 @@ import ImageIO
         if include { body["floatball"] = raw(show: show) }
         let data = try! JSONSerialization.data(withJSONObject: ["code": 0, "data": body])
         return AppCoordinator(identity: GameIdentity(gameID: 29, version: "1.0.1", packageCode: "1-218"), policy: policy,
-            backend: StubBackend(data), repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway())
+            backend: StubBackend(data), repository: MemoryRepository(), vault: MemoryVault(), gateway: UnavailableAuthGateway(),
+            screenMode: screenMode, changeScreenMode: changeScreenMode, waitForScreenMode: waitForScreenMode)
     }
     func context(_ sut: AppCoordinator, _ instance: String = "web_game") -> BridgeContext {
         BridgeContext(instance: instance, epoch: sut.epoch, isCurrent: { true })
     }
-    func call(_ sut: AppCoordinator, _ method: String, _ args: [String: Any] = [:], instance: String = "web_game") async -> BridgeResult? {
+    func call(_ sut: AppCoordinator, _ method: String, _ args: Any = [String: Any](), instance: String = "web_game") async -> BridgeResult? {
         var reply: BridgeResult?
         await sut.handle(method: method, args: args, context: context(sut, instance)) { reply = $0 }
         return reply
@@ -85,15 +89,55 @@ import ImageIO
         let sut = make(); await sut.start(); XCTAssertFalse(sut.floatingBallState.visible)
         await login(sut); XCTAssertFalse(sut.floatingBallState.visible)
         sut.gameDocumentBecameVisible(context: context(sut)); XCTAssertTrue(sut.floatingBallState.visible)
-        sut.openWelfareFromFloatingBall(); XCTAssertFalse(sut.floatingBallState.visible)
+        await sut.openWelfareFromFloatingBall(); XCTAssertFalse(sut.floatingBallState.visible)
         let changed = await call(sut, "setFloatingBall", ["show": true, "active": true], instance: "web_welfare")
         XCTAssertEqual(changed?.data as? Bool, true); XCTAssertFalse(sut.floatingBallState.visible)
         _ = await call(sut, "changeGameUrl", ["url": "https://fixture.test/game-next"], instance: "web_welfare")
+        XCTAssertEqual(sut.floatingBallState, FloatingBallState(visible: false, active: true))
+        sut.gameDocumentBecameVisible(context: context(sut))
         XCTAssertEqual(sut.floatingBallState, FloatingBallState(visible: true, active: true))
         _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
         _ = await call(sut, "setFloatingBall", ["show": false, "active": false], instance: "web_welfare")
         _ = await call(sut, "closePage", instance: "web_welfare")
         XCTAssertEqual(sut.floatingBallState, .hidden)
+    }
+    func testWelfareOpensLandscapeAndOnlyDedicatedCloseCanRotate() async {
+        var mode = ScreenMode.vertical
+        var changes: [ScreenMode] = []
+        let sut = make(screenMode: { mode }, changeScreenMode: { requested in
+            changes.append(requested); mode = requested
+        }, waitForScreenMode: { requested in mode == requested })
+        await sut.start(); await login(sut); sut.gameDocumentBecameVisible(context: context(sut))
+
+        await sut.openWelfareFromFloatingBall()
+        XCTAssertEqual(mode, .horizontal); XCTAssertEqual(changes, [.horizontal])
+        XCTAssertEqual(sut.headers["Screenmode"], "horizontal")
+        let info = await call(sut, "getGameInfo", instance: "web_welfare")
+        XCTAssertEqual((info?.data as? [String: Any])?["screenMode"] as? String, "horizontal")
+        _ = await call(sut, "closePage", instance: "web_welfare")
+        XCTAssertEqual(mode, .horizontal)
+
+        _ = await call(sut, "changeScreenmode", ["mode": "vertical"])
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        XCTAssertEqual(mode, .horizontal)
+        _ = await call(sut, "closeMiniWindow", ["page": "web_welfare"], instance: "web_welfare")
+        XCTAssertEqual(mode, .horizontal)
+
+        for invalid: Any in [["mode": "square"], ["mode": 1], [:], NSNull()] {
+            _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+            let result = await call(sut, "closeWelfarepage", invalid, instance: "web_welfare")
+            XCTAssertEqual(result?.data as? Bool, true)
+            XCTAssertEqual(mode, .horizontal)
+        }
+        _ = await call(sut, "openMiniWindow", ["page": "web_welfare"])
+        let wrongPage = await call(sut, "closeWelfarepage", ["mode": "vertical"])
+        XCTAssertEqual(wrongPage?.data as? Bool, true); XCTAssertEqual(mode, .vertical)
+        let closed = await call(sut, "closeWelfarepage", ["mode": "vertical"], instance: "web_welfare")
+        XCTAssertEqual(closed?.data as? Bool, false); XCTAssertEqual(mode, .vertical)
+        XCTAssertEqual(sut.headers["Screenmode"], "vertical")
+        let verticalInfo = await call(sut, "getGameInfo")
+        XCTAssertEqual((verticalInfo?.data as? [String: Any])?["screenMode"] as? String, "vertical")
+        XCTAssertEqual(changes, [.horizontal, .vertical, .horizontal, .vertical])
     }
     func testLogoutResetOldEpochAndInitiallyHiddenCanBeEnabled() async {
         let sut = make(show: false); await sut.start(); await login(sut)
@@ -126,6 +170,8 @@ import ImageIO
         XCTAssertEqual(requests.count, 2)
         ball.setActive(false); await Task.yield(); XCTAssertEqual(requests.count, 2)
         ball.frame.origin.y = 120; ball.layout(in: CGSize(width: 720, height: 400)); XCTAssertEqual(ball.frame.minY, 120)
+        ball.layout(in: CGSize(width: 720, height: 400), resetToConfiguration: true)
+        XCTAssertEqual(ball.frame.minY, 80)
         ball.layout(in: CGSize(width: 400, height: 720)); XCTAssertEqual(ball.frame.minY, 144)
         let layer = FloatingBallLayer(frame: CGRect(x: 0, y: 0, width: 400, height: 720)); layer.addSubview(ball)
         XCTAssertNil(layer.hitTest(CGPoint(x: 1, y: 700), with: nil))
@@ -150,9 +196,9 @@ import ImageIO
     func testScreenAwakeOnlyForFrontGame() async {
         let sut = make(); await sut.start(); XCTAssertFalse(sut.keepScreenAwake)
         await login(sut); XCTAssertTrue(sut.keepScreenAwake)
-        sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake) // 球尚未加载，福利页没有打开
+        await sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake) // 球尚未加载，福利页没有打开
         sut.gameDocumentBecameVisible(context: context(sut))
-        sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake)
+        await sut.openWelfareFromFloatingBall(); XCTAssertTrue(sut.keepScreenAwake)
         _ = await call(sut, "closeMiniWindow", ["page": "web_welfare"], instance: "web_welfare")
         XCTAssertTrue(sut.keepScreenAwake)
         sut.enteredBackground(); XCTAssertFalse(sut.keepScreenAwake)

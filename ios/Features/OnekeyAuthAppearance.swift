@@ -43,11 +43,11 @@ struct OnekeyAuthStyle {
         }
         guard Set(protocols.map(\.name)).count == protocols.count else { throw QSMError.invalid("一键登录协议名称重复") }
     }
-    func panel(in bounds: CGRect, safeArea: UIEdgeInsets) -> CGRect {
-        let available = bounds.inset(by: safeArea).insetBy(dx: 12, dy: 12)
-        let width = max(1, available.width * widthPercent / 100)
-        let height = max(1, available.height * heightPercent / 100)
-        return CGRect(x: available.midX - width / 2, y: available.midY - height / 2, width: width, height: height)
+    func panel(in bounds: CGRect) -> CGRect {
+        // 百分比以当前方向的完整屏幕为基准，不能先扣除安全区或额外边距。
+        let width = bounds.width * widthPercent / 100
+        let height = bounds.height * heightPercent / 100
+        return CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2, width: width, height: height)
     }
 }
 
@@ -58,6 +58,7 @@ struct OnekeyAuthStyle {
     static let text = UIColor(white: 102/255, alpha: 1)
     static let number = UIColor(white: 85/255, alpha: 1)
     static let secondary = UIColor(white: 153/255, alpha: 1)
+    static let panelCornerRadius: CGFloat = 14
     static let headerHeight: CGFloat = 53.7
     static func image(size: CGSize, draw: (CGRect) -> Void) -> UIImage {
         UIGraphicsImageRenderer(size: size).image { _ in draw(CGRect(origin: .zero, size: size)) }
@@ -109,7 +110,7 @@ struct OnekeyAuthStyle {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func layoutSubviews() {
         super.layoutSubviews()
-        let w = bounds.width, h = bounds.height, r: CGFloat = min(14, h/2)
+        let w = bounds.width, h = bounds.height, r = min(OnekeyBrand.panelCornerRadius, h/2)
         let p = UIBezierPath(); p.move(to: CGPoint(x: r, y: 0)); p.addLine(to: CGPoint(x: w-r, y: 0))
         p.addQuadCurve(to: CGPoint(x: w, y: r), controlPoint: CGPoint(x: w, y: 0)); p.addLine(to: CGPoint(x: w, y: h))
         p.addQuadCurve(to: CGPoint(x: 0, y: h), controlPoint: CGPoint(x: w/2, y: h*0.62)); p.addLine(to: CGPoint(x: 0, y: r))
@@ -117,6 +118,47 @@ struct OnekeyAuthStyle {
         shape.frame = bounds; shape.path = p.cgPath
         logo.frame = CGRect(x: 10, y: (h-37.4)/2, width: 112.2, height: 37.4)
         close.frame = CGRect(x: w-49, y: (h-44)/2, width: 44, height: 44)
+    }
+}
+
+@MainActor final class OnekeyPrivacyReminderView: UIView {
+    private init() {
+        super.init(frame: .zero)
+        backgroundColor = UIColor.black.withAlphaComponent(0.60)
+        layer.cornerRadius = 6
+        isUserInteractionEnabled = false
+        let label = UILabel()
+        label.text = "请阅读并同意用户注册协议及隐私政策"
+        label.textColor = .white; label.font = .systemFont(ofSize: 14)
+        label.numberOfLines = 0; label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -10)
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    static func show(in parent: UIView) {
+        // 显示期间忽略重复点击，不叠加提示，也不延长本次的 1 秒展示时间。
+        guard !parent.subviews.contains(where: { $0 is OnekeyPrivacyReminderView }) else { return }
+        let reminder = OnekeyPrivacyReminderView()
+        reminder.translatesAutoresizingMaskIntoConstraints = false
+        parent.addSubview(reminder)
+        NSLayoutConstraint.activate([
+            reminder.centerXAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.centerXAnchor),
+            reminder.centerYAnchor.constraint(equalTo: parent.safeAreaLayoutGuide.centerYAnchor),
+            reminder.leadingAnchor.constraint(greaterThanOrEqualTo: parent.leadingAnchor, constant: 24),
+            reminder.trailingAnchor.constraint(lessThanOrEqualTo: parent.trailingAnchor, constant: -24),
+            reminder.widthAnchor.constraint(lessThanOrEqualToConstant: 320)
+        ])
+        Task { @MainActor [weak reminder] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            reminder?.removeFromSuperview()
+        }
     }
 }
 

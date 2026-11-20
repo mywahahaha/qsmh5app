@@ -19,7 +19,7 @@ import ATAuthSDK
         guard continuation == nil, !closing, let host = presenter?(), host.viewIfLoaded?.window != nil,
               let secret = configuration.secret else { throw QSMError.invalid("一键登录宿主或配置不可用") }
         let style = try OnekeyAuthStyle(raw: configuration.raw)
-        let initialPanel = style.panel(in: host.view.bounds, safeArea: host.view.safeAreaInsets)
+        let initialPanel = style.panel(in: host.view.window?.bounds ?? host.view.bounds)
         _ = try OnekeyAuthLayout.make(size: initialPanel.size, style: style)
         let id = UUID(); flowID = id; deliveredPresentation = false; receivedPresentation = false; pendingToken = nil
         let sdk = TXCommonHandler.sharedInstance(); handler = sdk
@@ -43,8 +43,8 @@ import ATAuthSDK
                             model = try Self.makeModel(style: style, orientations: AuthPresentationPolicy.orientations(),
                                 carrierName: TXCommonUtils.getCurrentCarrierName(),
                                 viewport: { [weak host] in
-                                    guard let host = host else { return (.zero, .zero) }
-                                    return (host.view.bounds, host.view.safeAreaInsets)
+                                    guard let host = host else { return .zero }
+                                    return host.view.window?.bounds ?? host.view.bounds
                                 }, onClose: { [weak self] in
                                     guard self?.flowID == id else { return }; self?.finish(.failure(QSMError.cancelled))
                                 }, onInvalidLayout: { [weak self] in
@@ -73,7 +73,10 @@ import ATAuthSDK
                                     if self.deliveredPresentation { self.finish(.success(token)) }
                                     else { self.pendingToken = token }
                                 case "700000", "700001": self.finish(.failure(QSMError.cancelled))
-                                case "700002", "700003", "700004", "700006", "700007", "700008", "700009": break
+                                case "700002":
+                                    Self.showPrivacyReminderIfNeeded(for: result, from: host,
+                                        isChecked: { sdk.queryCheckBoxIsChecked() })
+                                case "700003", "700004", "700006", "700007", "700008", "700009": break
                                 default: self.finish(.failure(QSMError.invalid("运营商认证未完成（\(code)）")))
                                 }
                             }
@@ -83,25 +86,37 @@ import ATAuthSDK
             }
         }, onCancel: { [weak self] in Task { @MainActor in self?.cancel() } })
     }
+    static func showPrivacyReminderIfNeeded(for result: [AnyHashable: Any], from host: UIViewController,
+                                           isChecked: () -> Bool) {
+        // 只处理登录点击；SDK 仍负责拦截未勾选时的取号请求。
+        guard result["resultCode"] as? String == "700002",
+              !(result["isChecked"] as? Bool ?? isChecked()) else { return }
+        var presenter = host
+        while let presented = presenter.presentedViewController { presenter = presented }
+        guard !(presenter is UIAlertController), !presenter.isBeingDismissed,
+              presenter.viewIfLoaded?.window != nil else { return }
+        OnekeyPrivacyReminderView.show(in: presenter.view)
+    }
     static func makeModel(style: OnekeyAuthStyle, orientations: UIInterfaceOrientationMask, carrierName: String? = nil,
-                          viewport: @escaping () -> (CGRect, UIEdgeInsets), onClose: @escaping () -> Void,
+                          viewport: @escaping () -> CGRect, onClose: @escaping () -> Void,
                           onInvalidLayout: @escaping () -> Void) throws -> TXCustomModel {
         guard !orientations.isEmpty else { throw QSMError.invalid("授权页没有可用方向") }
-        let (bounds, safe) = viewport()
-        let initial = try OnekeyAuthLayout.make(size: style.panel(in: bounds, safeArea: safe).size, style: style)
+        let initial = try OnekeyAuthLayout.make(size: style.panel(in: viewport()).size, style: style)
         func layout(_ size: CGSize) -> OnekeyAuthLayout {
             if let value = try? OnekeyAuthLayout.make(size: size, style: style, fixedNumberSize: initial.numberFont.pointSize) { return value }
             Task { @MainActor in onInvalidLayout() }; return initial
         }
         let model = TXCustomModel()
         model.supportedInterfaceOrientations = orientations
-        model.contentViewFrameBlock = { _, size, _ in
-            let (current, insets) = viewport()
-            return style.panel(in: CGRect(origin: .zero, size: size.width > 0 && size.height > 0 ? size : current.size), safeArea: insets)
+        model.contentViewFrameBlock = { screenSize, _, _ in
+            // SDK 第一项为屏幕尺寸，第二项仅为父视图尺寸，不能用后者缩小比例基准。
+            let current = viewport()
+            let size = screenSize.width > 0 && screenSize.height > 0 ? screenSize : current.size
+            return style.panel(in: CGRect(origin: .zero, size: size))
         }
         model.alertBlurViewColor = .black; model.alertBlurViewAlpha = 0.45
         model.alertContentViewColor = OnekeyBrand.panel; model.alertContentViewAlpha = 1
-        model.alertCornerRadiusArray = [14,14,14,14]
+        model.alertCornerRadiusArray = Array(repeating: NSNumber(value: Double(OnekeyBrand.panelCornerRadius)), count: 4)
         model.backgroundColor = .clear; model.navIsHidden = true; model.alertBarIsHidden = true
         model.navTitle = NSAttributedString(string: ""); model.alertTitle = NSAttributedString(string: "")
         model.alertCloseItemIsHidden = true; model.logoIsHidden = true
@@ -119,12 +134,15 @@ import ATAuthSDK
         }
         model.sloganFrameBlock = { _, size, _ in layout(size).slogan }
         model.loginBtnText = NSAttributedString(string: style.loginText, attributes: [.foregroundColor:UIColor.white,.font:UIFont.systemFont(ofSize:16)])
-        model.loginBtnBgImgs = [OnekeyBrand.buttonImage(OnekeyBrand.orange),OnekeyBrand.buttonImage(OnekeyBrand.orange.withAlphaComponent(0.6)),OnekeyBrand.buttonImage(UIColor(red:0.9,green:0.33,blue:0,alpha:1))]
+        let loginBackground = OnekeyBrand.buttonImage(OnekeyBrand.orange)
+        // SDK 顺序为正常、禁用、高亮；协议勾选及按下状态均保持 #FF6600。
+        model.loginBtnBgImgs = [loginBackground,loginBackground,loginBackground]
         model.loginBtnFrameBlock = { _, size, _ in layout(size).login }
         model.changeBtnIsHidden = false
         model.changeBtnTitle = NSAttributedString(string: style.otherLoginText, attributes: [.foregroundColor:OnekeyBrand.text,.font:UIFont.systemFont(ofSize:13)])
         model.changeBtnFrameBlock = { _, size, _ in layout(size).change }
         model.checkBoxIsChecked = false; model.checkBoxIsHidden = false
+        model.privacyAlertIsNeedShow = false
         model.checkBoxWH = 44; model.checkBoxImageEdgeInsets = UIEdgeInsets(top:15,left:15,bottom:15,right:15)
         model.checkBoxVerticalCenter = true
         model.checkBoxImages = [OnekeyBrand.checkbox(checked:false),OnekeyBrand.checkbox(checked:true)]

@@ -19,19 +19,32 @@ import UIKit
         XCTAssertThrowsError(try OnekeyAuthStyle(raw:invalid))
     }
     func testLandscapeLivePercentagesPortraitAndCompactNeverOverlap() throws {
-        for (size,insets,w,h) in [
-            (CGSize(width:926,height:428),UIEdgeInsets(top:0,left:47,bottom:21,right:47),50,70),
-            (CGSize(width:844,height:390),UIEdgeInsets(top:0,left:47,bottom:21,right:47),60,75),
-            (CGSize(width:736,height:414),UIEdgeInsets.zero,50,70),
-            (CGSize(width:390,height:844),UIEdgeInsets(top:47,left:0,bottom:34,right:0),90,65)] {
+        for (size,w,h) in [
+            (CGSize(width:926,height:428),50,80),
+            (CGSize(width:844,height:390),60,75),
+            (CGSize(width:736,height:414),50,70),
+            (CGSize(width:390,height:844),90,65)] {
             let style = try OnekeyAuthStyle(raw:raw(ui:["dialog_width_percent":w,"dialog_height_percent":h]))
-            let panel = style.panel(in:CGRect(origin:.zero,size:size),safeArea:insets)
+            let panel = style.panel(in:CGRect(origin:.zero,size:size))
             let layout = try OnekeyAuthLayout.make(size:panel.size,style:style)
             let frames = [layout.number,layout.slogan,layout.login,layout.change,layout.privacy]
             for (a,b) in zip(frames,frames.dropFirst()) { XCTAssertLessThanOrEqual(a.maxY,b.minY) }
             XCTAssertGreaterThanOrEqual(layout.numberFont.pointSize,20); XCTAssertGreaterThanOrEqual(layout.login.height,44)
             XCTAssertLessThanOrEqual(layout.privacy.maxY,panel.height-8)
-            XCTAssertTrue(CGRect(origin:.zero,size:size).inset(by:insets).contains(panel))
+            XCTAssertTrue(CGRect(origin:.zero,size:size).contains(panel))
+        }
+    }
+    func testPercentagesUseEntireScreenAndStayCentered() throws {
+        for (width,height) in [(50,80),(100,100),(1,1)] {
+            let style = try OnekeyAuthStyle(raw:raw(ui:["dialog_width_percent":width,"dialog_height_percent":height]))
+            for screen in [CGRect(x:0,y:0,width:926,height:428),CGRect(x:0,y:0,width:390,height:844),
+                           CGRect(x:20,y:30,width:1024,height:768)] {
+                let panel = style.panel(in:screen)
+                XCTAssertEqual(panel.width / screen.width,CGFloat(width) / 100,accuracy:0.000001)
+                XCTAssertEqual(panel.height / screen.height,CGFloat(height) / 100,accuracy:0.000001)
+                XCTAssertEqual(panel.midX,screen.midX,accuracy:0.000001)
+                XCTAssertEqual(panel.midY,screen.midY,accuracy:0.000001)
+            }
         }
     }
     func testTinyAndExcessivelyLongProtocolCannotRenderClipped() throws {
@@ -56,14 +69,14 @@ import UIKit
         XCTAssertEqual(header.close.imageEdgeInsets.top,header.close.imageEdgeInsets.bottom)
     }
     func testNativeBrandLayoutPreviews() throws {
-        for (name,size,insets,w,h) in [
-            ("横屏_现网50乘70",CGSize(width:926,height:428),UIEdgeInsets(top:0,left:47,bottom:21,right:47),50,70),
-            ("横屏_紧凑60乘75",CGSize(width:844,height:390),UIEdgeInsets(top:0,left:47,bottom:21,right:47),60,75),
-            ("竖屏_90乘65",CGSize(width:390,height:844),UIEdgeInsets(top:47,left:0,bottom:34,right:0),90,65)] {
+        for (name,size,w,h) in [
+            ("横屏_整屏50乘80",CGSize(width:926,height:428),50,80),
+            ("横屏_紧凑60乘75",CGSize(width:844,height:390),60,75),
+            ("竖屏_90乘65",CGSize(width:390,height:844),90,65)] {
             let style = try OnekeyAuthStyle(raw:raw(ui:["dialog_width_percent":w,"dialog_height_percent":h]))
             let root = UIView(frame:CGRect(origin:.zero,size:size)); root.backgroundColor = UIColor(white:0.18,alpha:1)
             let caption = UILabel(frame:CGRect(x:20,y:0,width:size.width-40,height:30)); caption.text="布局测试预览 · 虚构号码，非真实取号截图"; caption.textColor = .white; caption.font = .systemFont(ofSize:12); root.addSubview(caption)
-            let panel = UIView(frame:style.panel(in:root.bounds,safeArea:insets)); panel.backgroundColor=OnekeyBrand.panel; panel.layer.cornerRadius=14; panel.clipsToBounds=true; root.addSubview(panel)
+            let panel = UIView(frame:style.panel(in:root.bounds)); panel.backgroundColor=OnekeyBrand.panel; panel.layer.cornerRadius=OnekeyBrand.panelCornerRadius; panel.clipsToBounds=true; root.addSubview(panel)
             let layout = try OnekeyAuthLayout.make(size:panel.bounds.size,style:style)
             let header = OnekeyBrandHeaderView {}; header.frame=CGRect(x:0,y:0,width:panel.bounds.width,height:OnekeyBrand.headerHeight); panel.addSubview(header)
             func label(_ text:String,_ frame:CGRect,_ font:UIFont,_ color:UIColor) {

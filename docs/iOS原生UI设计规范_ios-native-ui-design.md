@@ -78,15 +78,15 @@
 
 ## 5. 坐标、方向与安全区域
 
-定义 hostBounds 为当前 UIWindowScene 下实际容器 bounds，不使用 UIScreen.main.bounds 推算多窗口或横竖方向。背景可以铺满 hostBounds；可点击弹窗位于 safeArea 内再内缩 12pt 的可用矩形 R。
+定义 hostBounds 为当前 UIWindowScene 下实际容器 bounds，不使用 UIScreen.main.bounds 推算多窗口或横竖方向。背景可以铺满 hostBounds。2026-11-20 起，一键登录弹窗宽高按当前方向的完整屏幕计算，取消原先 safeArea 内再内缩 12pt 的比例基准。
 
-原生授权弹窗百分比以 R.width、R.height 分别计算。数值型页面布局单位按 pt；普通 H5 窗口沿用宿主 safeArea 布局。**H5 的宽度、高度同时为 `100%` 时，整个 WebView 直接覆盖 hostBounds，忽略偏移，不再由宿主预留四边安全间距。** 页面背景允许延伸到屏幕边缘，H5 自行用 `env(safe-area-inset-*)` 避让可点击内容；原生授权弹窗使用安全区域。悬浮球水平使用整个窗口以满足 `right: 0` 贴屏幕边缘，纵向仍限制在安全区域内。
+原生授权弹窗百分比以 SDK frame block 第一项 `screenSize` 的完整宽高分别计算；初始布局及 SDK 屏幕尺寸无效时使用宿主 UIWindow 的 bounds，不减安全区域或额外边距。数值型页面布局单位按 pt；普通 H5 窗口沿用宿主 safeArea 布局。**H5 的宽度、高度同时为 `100%` 时，整个 WebView 直接覆盖 hostBounds，忽略偏移，不再由宿主预留四边安全间距。** 页面背景允许延伸到屏幕边缘，H5 自行用 `env(safe-area-inset-*)` 避让可点击内容；一键登录面板保持接口指定占屏比例。悬浮球水平使用整个窗口以满足 `right: 0` 贴屏幕边缘，纵向仍限制在安全区域内。
 
 viewSafeAreaInsetsDidChange、viewDidLayoutSubviews 或有效方向/窗口变化时重新计算布局；不把首次计算的固定像素永久保存。H5 需要全屏内容时通过 safe-area-inset-* 适配操作区域；必要时约定宿主 inset，不能同时由宿主和 H5 重复加安全边距。
 
 2026-11-03 补充：业务 H5 容器禁用原生页面拖动、回弹、缩放、滚动条及前后滑动导航，自动 content inset 为零，补充 `viewport-fit=cover`；隐藏网页滚动条并阻止浏览器原生 HTML 拖拽，H5 的按钮、输入、触摸事件保持可用。不强改 H5 业务样式中的 margin/padding；需要长内容时由 H5 在内部滚动区实现阅读。SDK 运营商/业务协议详情保留 SDK 原生阅读和返回能力。
 
-建议例：横屏可用 R=800×340pt，一键登录 60%×75% 得到 480×255pt；iOS 与 Android 全屏比例相同，但可点击区域的绝对值因安全区域不同而不同。
+示例：横屏完整屏幕 926×428pt，一键登录 50%×80% 得到 463×342.4pt，居中原点为 (231.5, 42.8)。旧算法在左右安全区各 47pt、底部 21pt 时得到 404×306.4pt，是本次两端显示差异的已确认原因之一。即使比例配置相同，不同屏幕纵横比仍会影响弹窗自身形状。
 
 ## 6. UI03：一键登录授权弹窗
 
@@ -94,7 +94,7 @@ viewSafeAreaInsetsDidChange、viewDidLayoutSubviews 或有效方向/窗口变化
 
 | 项目 | 设计值 |
 | --- | --- |
-| 宽高 | R.width × dialog_width_percent / 100；R.height × dialog_height_percent / 100 |
+| 宽高 | 完整屏幕宽 × dialog_width_percent / 100；完整屏幕高 × dialog_height_percent / 100，居中 |
 | 默认配置 | 宽 60%、高 75%；取服务端 iOS 配置，不在客户端另放大 |
 | 圆角 | 14pt |
 | 头部总高 | 53.7pt；构建 8 按真机反馈增加 10pt |
@@ -109,13 +109,15 @@ viewSafeAreaInsetsDidChange、viewDidLayoutSubviews 或有效方向/窗口变化
 
 构建 7 实施：通过 TXCustomModel 的弹窗、frame block、customViewBlock 和 expandAuthPageCheckedScope 公开配置接入品牌头、真实业务协议、默认未勾选、说明点击切换及 SDK 协议校验；横竖方向仍与实际游戏包一致。正常与紧凑布局按完整协议测量，放不下时回退 H5。实现及验证边界见[授权 UI 与全屏修复记录](iOS授权品牌UI与全屏容器修复_ios-auth-ui-fullscreen.md)。
 
+2026-11-20 补充：未勾选协议点击登录时，在 SDK 授权页之上居中显示轻提示“请阅读并同意用户注册协议及隐私政策”。提示黑色背景、60% 不透明度（alpha=0.60）、白字，无关闭按钮，1 秒后自动消失；不拦截底层触摸，不增加整屏遮罩。显示期间重复点击不叠加，也不延长本次展示时间，消失后可再次提示。消失后保留授权页和未勾选状态，不自动同意、不登录、不回退 H5。已勾选时沿用 SDK 正常取号流程；协议勾选及协议链接点击不弹此提示。
+
 ### 6.2 内容尺寸与布局
 
 | 内容 | 设计 |
 | --- | --- |
 | 脱敏号码 | SDK 提供；28pt 默认，紧凑状态最低 20pt；#555555，居中 |
 | 运营商说明 | SDK 提供；12pt 默认，不能替换成固定运营商 |
-| 登录按钮 | 宽 82% 面板宽；高 44pt，任何状态不得低于 SDK 40pt；橙底白字、16pt、圆角 5pt |
+| 登录按钮 | 宽 82% 面板宽；高 44pt，任何状态不得低于 SDK 40pt；正常、禁用、高亮均为不透明 #FF6600 背景，不随协议勾选变化；白字、16pt、圆角 5pt |
 | 其他方式 | 13pt、#666666，文字读取 other_login_text；可点区域高 44pt |
 | 协议 | 12pt 起、正常换行；文字 #666666，链接蓝色，不能小于 SDK 下限 |
 | 复选框 | 可见 14×14pt，默认未勾选；透明命中可扩大至 44pt |

@@ -172,14 +172,17 @@ struct InitConfiguration {
     let backgroundURL: URL?
     let pages: [String: PageSpec]
     let jumpHosts: Set<String>
+    /// 仅 iOS 游戏容器使用；缺失或非布尔 true 时保持关闭。
+    let audioControl: Bool
     let auth: AuthConfiguration
     let updateOffer: UpdateOffer?
     let floatingBall: FloatingBallConfiguration?
     let popupInterval: FloatingBallPollingConfiguration?
-    init(privacyAuto: Bool, backgroundURL: URL? = nil, pages: [String: PageSpec], jumpHosts: Set<String>, auth: AuthConfiguration, updateOffer: UpdateOffer?,
+    init(privacyAuto: Bool, backgroundURL: URL? = nil, pages: [String: PageSpec], jumpHosts: Set<String>, audioControl: Bool = false,
+         auth: AuthConfiguration, updateOffer: UpdateOffer?,
          floatingBall: FloatingBallConfiguration? = nil, popupInterval: FloatingBallPollingConfiguration? = nil) {
         self.backgroundURL = backgroundURL; self.privacyAuto = privacyAuto; self.pages = pages; self.jumpHosts = jumpHosts; self.auth = auth; self.updateOffer = updateOffer
-        self.floatingBall = floatingBall; self.popupInterval = popupInterval
+        self.audioControl = audioControl; self.floatingBall = floatingBall; self.popupInterval = popupInterval
     }
     static func parse(_ data: Data, policy: URLPolicy) throws -> InitConfiguration {
         let root = try JSON.envelope(data)
@@ -209,11 +212,17 @@ struct InitConfiguration {
         let jumps: Set<String>
         if let raw = body["jumpDomain"] {
             guard let strings = raw as? [String] else { throw QSMError.invalid("jumpDomain 必须为字符串数组") }
-            guard strings.allSatisfy({ !$0.isEmpty && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) &&
-                URL(string: "https://" + $0)?.host?.lowercased() == $0.lowercased() && !$0.contains("/") && !$0.contains(":") && !$0.contains("@") }) else {
-                throw QSMError.invalid("jumpDomain 包含无效主机")
+            var normalized: Set<String> = []
+            for rawHost in strings {
+                let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if host.isEmpty { continue }
+                guard URL(string: "https://" + host)?.host?.lowercased() == host,
+                      !host.contains("/"), !host.contains(":"), !host.contains("@") else {
+                    throw QSMError.invalid("jumpDomain 包含无效主机")
+                }
+                normalized.insert(host)
             }
-            jumps = Set(strings.map { $0.lowercased() })
+            jumps = normalized
         } else { jumps = [] }
         // 可选认证配置不影响基础 H5 登录；只有 open=1 才解析子配置。
         var auth = AuthConfiguration.disabled
@@ -227,7 +236,9 @@ struct InitConfiguration {
         }
         let backgroundText = (body["bgImage"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let backgroundURL = backgroundText.isEmpty ? nil : URL(string: backgroundText).flatMap { policy.allows($0) ? $0 : nil }
-        return InitConfiguration(privacyAuto: privacy, backgroundURL: backgroundURL, pages: pages, jumpHosts: jumps, auth: auth,
+        // 仅 JSON 布尔 true 开启。配置缺失、false 或错误类型均安全降级，不影响游戏初始化。
+        let audioControl = JSON.boolean(body["audioControl"]) == true
+        return InitConfiguration(privacyAuto: privacy, backgroundURL: backgroundURL, pages: pages, jumpHosts: jumps, audioControl: audioControl, auth: auth,
                                  updateOffer: UpdatePolicy.offer(body["updateInfo"]),
                                  floatingBall: try body["floatball"].map { try FloatingBallConfiguration.parse($0, policy: policy) },
                                  popupInterval: FloatingBallPollingConfiguration.parse(body["popupInterval"], policy: policy))
@@ -242,6 +253,41 @@ struct URLPolicy {
     }
     func accepts(source: URL, trusted: URL, isMainFrame: Bool) -> Bool {
         isMainFrame && allows(source) && Origin(source) == Origin(trusted)
+    }
+}
+
+enum WebNavigationDisposition: Equatable {
+    case webView
+    case externalBrowser
+    case blocked
+}
+
+enum WebNavigationPolicy {
+    static func externalBrowserAllows(_ url: URL, jumpHosts: Set<String>) -> Bool {
+        guard let origin = Origin(url) else { return false }
+        return jumpHosts.contains { $0.caseInsensitiveCompare(origin.host) == .orderedSame }
+    }
+
+    static func isCurrentDocumentGET(_ request: URLRequest, currentURL: URL?) -> Bool {
+        guard (request.httpMethod ?? "GET").caseInsensitiveCompare("GET") == .orderedSame,
+              let target = request.url, let currentURL,
+              Origin(target) == Origin(currentURL) else { return false }
+        // 与 Android 保持一致：reload 判断忽略 fragment，只比较主机、端口、路径和 query。
+        return target.path == currentURL.path && target.query == currentURL.query
+    }
+
+    static func mainFrameDisposition(url: URL, trustedURL: URL, pagePolicy: URLPolicy,
+                                     jumpHosts: Set<String>, isInitialNavigation: Bool,
+                                     isCurrentDocumentGET: Bool) -> WebNavigationDisposition {
+        if !isInitialNavigation, !isCurrentDocumentGET,
+           externalBrowserAllows(url, jumpHosts: jumpHosts) {
+            return .externalBrowser
+        }
+        return pagePolicy.accepts(source: url, trusted: trustedURL, isMainFrame: true) ? .webView : .blocked
+    }
+
+    static func newWindowDisposition(url: URL, jumpHosts: Set<String>) -> WebNavigationDisposition {
+        externalBrowserAllows(url, jumpHosts: jumpHosts) ? .externalBrowser : .blocked
     }
 }
 

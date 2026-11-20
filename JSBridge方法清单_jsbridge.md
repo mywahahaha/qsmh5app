@@ -508,6 +508,22 @@ if (viewportObserver) viewportObserver.observe(document.documentElement);
 
 首次业务方向可读取 `getGameInfo.data.screenMode`；H5 的布局更新应以当前 viewport 尺寸为准。iOS 不提供 `QSMH5APP.on/off` 或 `screenChange`。
 
+### iOS `audioControl` 受控 Web Audio 恢复
+
+初始化响应可选返回：
+
+```json
+{ "audioControl": true }
+```
+
+仅当该字段是 JSON 布尔 `true` 时，iOS 才会在 `web_game` 的 document start 向主页面及其 iframe 注入音频恢复脚本；字段缺失、`false`、`1`、`"true"` 或其他类型均不启用。脚本只处理 `#game_if` 及其子 frame 内已创建的 `AudioContext` / `webkitAudioContext`，以及后台前确实在播放的 `<audio>` / `<video>`；不会触碰外层 H5 或其他顶层 iframe。
+
+后台时，脚本优先记录 `running` 或 `interrupted` 的 Web Audio 上下文和正在播放的媒体；iframe 自身的 `visibilitychange` 也会保存同一轮快照，避免退后台瞬间的原生脚本已来不及执行。前台时先在 0、250、900 ms 重试 `resume()` / `play()`；时钟未推进时在约 2.2 秒重启上下文，并在约 5 秒对本轮候选额外执行一次受控 `suspend()` → `resume()`，覆盖“状态仍为 running、时钟也在走但实际无声”的 WebKit 情形。重复的前台转发使用同一序号，不会重置这组计时器；iframe 内的首次真实触摸仍可再触发一次兜底。
+
+外层 H5 **不需要新增 JavaScript 配合**，也不会获得新 Bridge API 或前后台 DOM 通知。该功能不发送 `screenChange`、不携带方向信息、不读取 iframe 页面内容，不重载游戏 iframe，也不启用后台音频；约 5 秒的受控重启可能带来极短的声音断续，仅对显式开启该开关的游戏生效，也不会修改 Android 行为。
+
+它仍受第三方游戏实现和 WebKit 限制：若游戏把音频放在 Worker、使用私有原生音频链路、启用反篡改检测，或系统拒绝自动恢复，仍可能需要供应商在游戏引擎内按其官方方式恢复音频。真机应至少覆盖 `audioControl=true/false`、后台 30 秒、锁屏恢复、连续多次前后台与外部浏览器往返。
+
 ## 5. 返回码定义
 
 | code | 含义 |

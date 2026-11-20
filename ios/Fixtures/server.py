@@ -71,7 +71,12 @@ class Handler(BaseHTTPRequestHandler):
             if scenario == "fullscreen":
                 controls = '<button onclick="document.getElementById(\'result\').textContent=\'页面滚动：\'+window.scrollY">检查页面滚动</button>'
             welfare = '<button onclick="call(\'setFloatingBall\',{show:false,active:true})">福利中隐藏激活球</button><button onclick="call(\'changeGameUrl\',{url:gameURL()})">换地址返回游戏</button>' if floating else ""
-            text = text.replace("__FLOATING_CONTROLS__", controls).replace("__WELFARE_CONTROLS__", welfare)
+            external = ""
+            if scenario == "external-link":
+                target = f"http://localhost:{self.server.server_port}/evil"
+                external = (f'<a href="{target}" target="_blank">外部浏览器打开</a>'
+                            f'<button onclick="var w=window.open();if(w)w.location={target!r}">空窗口外部浏览器打开</button>')
+            text = text.replace("__FLOATING_CONTROLS__", controls).replace("__WELFARE_CONTROLS__", welfare).replace("__EXTERNAL_CONTROLS__", external)
             return self.send(text, content_type="text/html; charset=utf-8")
         return self.send({}, 404)
 
@@ -109,6 +114,10 @@ class Handler(BaseHTTPRequestHandler):
                 auth = {"open": 1, "config": {"scheme_secret": "local-test-secret", "exchange_url": base + "/exchange", "launch_total_timeout_ms": 1000}}
             data = {"privacyAuto": scenario != "no-privacy", "h5Pages": pages,
                 "jumpDomain": [], "aliyunOnekeyConfig": auth, "updateInfo": {"open": 0}}
+            if scenario == "external-link":
+                data["jumpDomain"] = [" LOCALHOST ", "", "localhost"]
+                for page in pages.values():
+                    page["url"] += "?scenario=external-link"
             if scenario.startswith("update-"):
                 data["updateInfo"] = {"open": 1, "width": "80%", "height": "auto", "force": 1 if scenario == "update-force" else 0,
                     "title": "邀您体验新版本", "desc": "发现新版本，体验优化", "version": "1.0.2", "time": "2026-11-04",

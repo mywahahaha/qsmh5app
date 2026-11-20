@@ -221,6 +221,7 @@ struct BridgeContext {
         var pages = config.pages
         pages["web_game"] = PageSpec(instance: game.instance, url: url, width: game.width, height: game.height, left: game.left, top: game.top)
         return InitConfiguration(privacyAuto: config.privacyAuto, backgroundURL: config.backgroundURL, pages: pages, jumpHosts: config.jumpHosts,
+                                 audioControl: config.audioControl,
                                  auth: config.auth, updateOffer: config.updateOffer,
                                  floatingBall: config.floatingBall, popupInterval: config.popupInterval)
     }

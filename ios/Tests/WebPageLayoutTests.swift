@@ -1,5 +1,6 @@
 import XCTest
 import UIKit
+import WebKit
 @testable import QSMH5App
 
 @MainActor final class WebPageLayoutTests: XCTestCase {
@@ -30,5 +31,13 @@ import UIKit
         XCTAssertFalse(scroll.automaticallyAdjustsScrollIndicatorInsets)
         XCTAssertFalse(controller.webView.allowsLinkPreview); XCTAssertFalse(controller.webView.allowsBackForwardNavigationGestures)
         XCTAssertFalse(scroll.pinchGestureRecognizer?.isEnabled ?? false)
+    }
+    func testWebAudioRecoveryOnlyInjectsIntoEnabledGameAndUsesAllFrames() {
+        XCTAssertTrue(WebAudioRecoveryScript.shouldInject(audioControl: true, pageInstance: "web_game"))
+        XCTAssertFalse(WebAudioRecoveryScript.shouldInject(audioControl: false, pageInstance: "web_game"))
+        XCTAssertFalse(WebAudioRecoveryScript.shouldInject(audioControl: true, pageInstance: "web_login"))
+        let script = WebAudioRecoveryScript.makeUserScript(source: "/* test */")
+        XCTAssertEqual(script.injectionTime, .atDocumentStart)
+        XCTAssertFalse(script.isForMainFrameOnly)
     }
 }

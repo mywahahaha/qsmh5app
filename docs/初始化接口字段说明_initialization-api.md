@@ -1,6 +1,6 @@
 # 初始化接口字段说明
 
-更新日期：2026-11-12。本文说明初始化接口的已确认字段，业务流程以 [安卓 H5 游戏包开发需求文档](../安卓H5游戏包开发需求文档_requirements.md) 为准。此前版本用户已确认完成 Android 真机测试，具体进度与历史验证记录见[安卓工程构建与联调指南](安卓工程构建与联调指南_android-build-and-integration.md)。本次补充 Android 悬浮球从隐藏恢复显示时的重新定位规则；宽高 dp、`top/bottom` 优先级及比例/dp 规则以下文为准。
+更新日期：2026-11-19。本文说明初始化接口的已确认字段，业务流程以 [安卓 H5 游戏包开发需求文档](../安卓H5游戏包开发需求文档_requirements.md) 为准。此前版本用户已确认完成 Android 真机测试，具体进度与历史验证记录见[安卓工程构建与联调指南](安卓工程构建与联调指南_android-build-and-integration.md)。本次补充 iOS `jumpDomain` 外部浏览器规则；宽高 dp、`top/bottom` 优先级及比例/dp 规则以下文为准。
 
 ## 请求与响应
 
@@ -17,12 +17,19 @@
 | `data` | object | 成功配置；失败响应不要求提供 |
 | `data.bgImage` | string | 可选 H5 底层背景绝对地址，等比例铺满；区别于本地启动闪图 |
 | `data.updateInfo` | object | 更新窗口及处理方式，详见下节 |
-| `data.jumpDomain` | string[] | 游戏内跳转到外部浏览器的精确主机白名单；不用于更新地址校验或 Bridge 来源校验 |
+| `data.jumpDomain` | string[] | 游戏内跳转到外部浏览器的精确主机白名单；HTTP/HTTPS 均可，忽略主机名大小写和端口，但不自动包含子域；不用于更新地址校验或 Bridge 来源校验 |
+| `data.audioControl` | boolean | 可选、仅 iOS `web_game` 使用的第三方 iframe 音频恢复开关。仅 JSON 布尔 `true` 启用；缺失、`false` 或非布尔值均关闭。开启后 WebKit 在该游戏 WebView 的各 frame document start 安装受控脚本，但前后台信号只定向发送给 `#game_if` 及其子 frame；脚本仅恢复本轮运行过的 Web Audio 或播放中的 HTML 媒体，不传递账号、Token、Bridge 或屏幕方向数据。Android 当前忽略该字段 |
 | `data.aliyunOnekeyConfig` | object | 阿里云一键登录配置，`open=1` 开启；完整子字段、默认值、样式与 iOS 参考见[一键登录独立需求](阿里云一键登录独立需求_aliyun-onekey-login.md) |
 | `data.popupInterval` | object | 运营心跳地址 `url` 及秒数间隔 `interval` |
 | `data.floatball` | object | 悬浮球初始显隐、图片、尺寸与位置，Android 规则及 iOS 适配详见下节 |
 | `data.privacyAuto` | boolean | 尚未同意隐私时是否先显示协议页面；`false` 跳过并本地标记已同意 |
 | `data.h5Pages` | object | 页面配置，以 `agreement/login/welfare/game` 映射页面实例及布局 |
+
+### `jumpDomain` 外部浏览器规则
+
+- 普通主页面跳转与 `target=_blank` / `window.open` 新窗口统一按目标 URL 的主机复验；`window.open()` 先创建空窗口再赋 URL 时使用无 Bridge 的临时 WebView 捕获目标，并在 5 秒内完成复验和销毁。命中白名单后交给系统默认浏览器，不在带 Bridge 权限的游戏 WebView 内加载。白名单同域链接也外开，当前文档的 GET reload 仍留在原 WebView。
+- iOS 通过系统公开的 URL 打开接口启动默认浏览器，不修改游戏的 `requestedMode`、`Screenmode` 或 `getGameInfo.screenMode`。游戏进入后台时保留原布局，返回前台后仍使用离开前的横竖屏模式。
+- iOS 没有公开接口可指定 Safari 或其他外部浏览器窗口的方向。浏览器方向由设备姿态和浏览器自身决定；若强制浏览器竖屏，必须先旋转游戏界面或改为应用内浏览器，这两种方案均不符合“外部浏览器打开且游戏不切方向”的约束，因此客户端不做私有 API 或临时转屏处理。
 
 ## 悬浮球字段 `data.floatball`
 

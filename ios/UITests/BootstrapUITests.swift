@@ -92,6 +92,22 @@ import XCTest
         button("关闭游戏").tap()
         XCTAssertTrue(app.staticTexts["游戏已关闭"].waitForExistence(timeout: 5))
     }
+    func testWhitelistedNewWindowsOpenExternalBrowserAndKeepGameOrientation() {
+        launch("external-link"); agreeAndLogin()
+        XCTAssertGreaterThan(app.frame.width, app.frame.height)
+        let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+        func openAndReturn(_ element: XCUIElement) {
+            element.tap()
+            XCTAssertEqual(safari.wait(for: .runningForeground, timeout: 10), true)
+            app.activate()
+            XCTAssertTrue(text("游戏页面（本地测试）").waitForExistence(timeout: 10))
+            XCTAssertGreaterThan(app.frame.width, app.frame.height)
+            button("读取屏幕方向").tap()
+            XCTAssertTrue(text("screenMode=horizontal").waitForExistence(timeout: 5))
+        }
+        openAndReturn(app.webViews.links["外部浏览器打开"].firstMatch)
+        openAndReturn(button("空窗口外部浏览器打开"))
+    }
     func testChangeScreenModeIsIdempotentAndRotatesBothDirections() {
         launch(); agreeAndLogin()
         XCTAssertGreaterThan(app.frame.width, app.frame.height)

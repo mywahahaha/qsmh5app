@@ -5,6 +5,7 @@ import WebKit
     let coordinator: AppCoordinator
     private let orientation: ScreenOrientationController
     private var pages: [String: WebPageController] = [:]
+    private var pageStack: [String] = []
     private let status = UIStackView()
     private let label = UILabel()
     private let background = StartupBackgroundView()
@@ -27,6 +28,13 @@ import WebKit
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask { orientation.supportedInterfaceOrientations }
     func setApplicationActive(_ active: Bool) {
         UIApplication.shared.isIdleTimerDisabled = active && coordinator.keepScreenAwake
+    }
+    /// 私有音频生命周期只交给游戏页；不向任意 H5 派发前后台 DOM 通知。
+    func applicationDidBecomeActive() {
+        pages["web_game"]?.applicationDidBecomeActive()
+    }
+    func applicationWillResignActive() {
+        pages["web_game"]?.applicationWillResignActive()
     }
     override func viewDidLoad() {
         super.viewDidLoad(); view.backgroundColor = .systemBackground; view.accessibilityIdentifier = "qsm.root"
@@ -115,6 +123,7 @@ import WebKit
         case .status(let state): showStatus(state)
         case .removeAll:
             for name in Array(pages.keys) { remove(name) }
+            pageStack.removeAll()
             floatingBall?.destroy(); floatingBall = nil
         case .remove(let name): remove(name)
         case .show(let spec, let navigate):
@@ -122,7 +131,9 @@ import WebKit
                 status.isHidden = true
                 if let existing = pages[spec.instance] { existing.update(spec, navigate: navigate); view.bringSubviewToFront(existing.view) }
                 else {
-                    let page = try WebPageController(spec: spec, coordinator: coordinator)
+                    let audioControlEnabled = WebAudioRecoveryScript.shouldInject(
+                        audioControl: coordinator.configuration?.audioControl == true, pageInstance: spec.instance)
+                    let page = try WebPageController(spec: spec, coordinator: coordinator, audioControlEnabled: audioControlEnabled)
                     page.onContentReady = { [weak self] in self?.splash.contentReady() }
                     page.onTerminalFailure = { [weak self] in self?.splash.dismiss() }
                     pages[spec.instance] = page; addChild(page)
@@ -131,6 +142,7 @@ import WebKit
                     view.addSubview(page.view); page.didMove(toParent: self)
                     page.view.layoutIfNeeded(); page.start()
                 }
+                pageStack.removeAll { $0 == spec.instance }; pageStack.append(spec.instance)
                 view.setNeedsLayout()
             } catch { showStatus(.failure(error.localizedDescription)) }
         case .floatingBall(let presentation):
@@ -167,6 +179,7 @@ import WebKit
         setApplicationActive(UIApplication.shared.applicationState == .active)
     }
     private func remove(_ name: String) {
+        pageStack.removeAll { $0 == name }
         guard let page = pages.removeValue(forKey: name) else { return }
         page.invalidate(); page.willMove(toParent: nil); page.view.removeFromSuperview(); page.removeFromParent()
     }

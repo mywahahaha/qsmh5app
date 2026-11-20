@@ -74,6 +74,13 @@ struct CapturingTransport: HTTPTransport {
         let response = try XCTUnwrap(arguments[2] as? [String: Any])
         XCTAssertEqual((response["data"] as? [String: Any])?["text"] as? String, hostile)
     }
+    func testNativeAudioLifecycleScriptOnlyAcceptsExpectedStates() throws {
+        XCTAssertEqual(try XCTUnwrap(NativeAudioLifecycleScript.make(state: "background")),
+                       "window.dispatchEvent(new CustomEvent(\"__qsmAudioLifecycle\",{detail:{\"state\":\"background\"}}));")
+        XCTAssertEqual(try XCTUnwrap(NativeAudioLifecycleScript.make(state: "foreground")),
+                       "window.dispatchEvent(new CustomEvent(\"__qsmAudioLifecycle\",{detail:{\"state\":\"foreground\"}}));")
+        XCTAssertNil(NativeAudioLifecycleScript.make(state: "screenChange"))
+    }
     func fixture(privacy: Bool = true, auth: Bool = false) -> Data {
         let pages = Dictionary(uniqueKeysWithValues: ["agreement", "login", "game", "welfare"].map { name in
             (name, ["instance": "web_" + name, "url": "https://fixture.test/" + name, "width": "100%", "height": "100%", "left": "center", "top": "center"] as [String: Any])
@@ -113,6 +120,34 @@ struct CapturingTransport: HTTPTransport {
     func testDisabledBadAuthConfigDoesNotBlockH5() throws {
         let parsed = try InitConfiguration.parse(fixture(), policy: policy)
         XCTAssertFalse(parsed.auth.enabled); XCTAssertEqual(parsed.pages.count, 4)
+    }
+    func testJumpDomainsTrimNormalizeIgnoreBlankAndDeduplicate() throws {
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture()) as? [String: Any])
+        var body = try XCTUnwrap(root["data"] as? [String: Any])
+        body["jumpDomain"] = [" PAY.Example.com ", "", "   ", "pay.example.com"]
+        root["data"] = body
+        let parsed = try InitConfiguration.parse(JSONSerialization.data(withJSONObject: root), policy: policy)
+        XCTAssertEqual(parsed.jumpHosts, ["pay.example.com"])
+    }
+    func testAudioControlOnlyEnablesForJSONBooleanTrue() throws {
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture()) as? [String: Any])
+        var body = try XCTUnwrap(root["data"] as? [String: Any])
+        XCTAssertFalse(try InitConfiguration.parse(JSONSerialization.data(withJSONObject: root), policy: policy).audioControl)
+        for value in [false as Any, "true" as Any, 1 as Any, NSNull()] {
+            body["audioControl"] = value; root["data"] = body
+            XCTAssertFalse(try InitConfiguration.parse(JSONSerialization.data(withJSONObject: root), policy: policy).audioControl)
+        }
+        body["audioControl"] = true; root["data"] = body
+        XCTAssertTrue(try InitConfiguration.parse(JSONSerialization.data(withJSONObject: root), policy: policy).audioControl)
+    }
+    func testAudioControlSurvivesInitialGameURLOverride() async throws {
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture(privacy: false)) as? [String: Any])
+        var body = try XCTUnwrap(root["data"] as? [String: Any]); body["audioControl"] = true; root["data"] = body
+        let backend = StubBackend(try JSONSerialization.data(withJSONObject: root))
+        let sut = AppCoordinator(identity: identity, policy: policy, backend: backend, repository: MemoryRepository(), vault: MemoryVault(),
+                                 gateway: UnavailableAuthGateway(), initialGameURL: URL(string: "https://fixture.test/pack-game")!)
+        await sut.start()
+        XCTAssertTrue(sut.configuration?.audioControl == true)
     }
     func testUpdatePolicyRejectsInvalidEntrance() throws {
         var raw: [String: Any] = ["open":1,"width":"80%","height":"auto","force":1,
@@ -212,6 +247,50 @@ struct CapturingTransport: HTTPTransport {
         XCTAssertFalse(local.allows(URL(string: "http://localhost:18741")!))
         XCTAssertFalse(local.allows(URL(string: "http://127.0.0.1:18740")!))
         XCTAssertFalse(policy.allows(URL(string: "http://localhost:18740")!))
+    }
+    func testExternalBrowserUsesIndependentExactHostPolicy() {
+        let hosts: Set<String> = ["PAY.Example.com"]
+        XCTAssertTrue(WebNavigationPolicy.externalBrowserAllows(
+            URL(string: "https://pay.example.com/order")!, jumpHosts: hosts))
+        XCTAssertTrue(WebNavigationPolicy.externalBrowserAllows(
+            URL(string: "http://pay.example.com:8080/order")!, jumpHosts: hosts))
+        for target in ["https://sub.pay.example.com/order", "https://pay.example.com.evil/order",
+                       "https://user@pay.example.com/order", "ftp://pay.example.com/order"] {
+            XCTAssertFalse(WebNavigationPolicy.externalBrowserAllows(URL(string: target)!, jumpHosts: hosts))
+        }
+    }
+    func testExternalNavigationMatchesAndroidMainFrameAndReloadRules() {
+        let trusted = URL(string: "https://game.example.com/index?game=29")!
+        let hosts: Set<String> = ["game.example.com", "pay.example.com"]
+        XCTAssertEqual(WebNavigationPolicy.mainFrameDisposition(
+            url: trusted, trustedURL: trusted, pagePolicy: policy, jumpHosts: hosts,
+            isInitialNavigation: true, isCurrentDocumentGET: false), .webView)
+        XCTAssertEqual(WebNavigationPolicy.mainFrameDisposition(
+            url: URL(string: "https://game.example.com/welfare")!, trustedURL: trusted,
+            pagePolicy: policy, jumpHosts: hosts, isInitialNavigation: false,
+            isCurrentDocumentGET: false), .externalBrowser)
+        XCTAssertEqual(WebNavigationPolicy.mainFrameDisposition(
+            url: URL(string: "http://pay.example.com/order")!, trustedURL: trusted,
+            pagePolicy: policy, jumpHosts: hosts, isInitialNavigation: false,
+            isCurrentDocumentGET: false), .externalBrowser)
+        XCTAssertEqual(WebNavigationPolicy.mainFrameDisposition(
+            url: trusted, trustedURL: trusted, pagePolicy: policy, jumpHosts: hosts,
+            isInitialNavigation: false, isCurrentDocumentGET: true), .webView)
+        XCTAssertEqual(WebNavigationPolicy.mainFrameDisposition(
+            url: URL(string: "https://blocked.example.com")!, trustedURL: trusted,
+            pagePolicy: policy, jumpHosts: hosts, isInitialNavigation: false,
+            isCurrentDocumentGET: false), .blocked)
+        XCTAssertEqual(WebNavigationPolicy.newWindowDisposition(
+            url: URL(string: "http://pay.example.com/blank")!, jumpHosts: hosts), .externalBrowser)
+        XCTAssertEqual(WebNavigationPolicy.newWindowDisposition(
+            url: URL(string: "about:blank")!, jumpHosts: hosts), .blocked)
+
+        let current = URL(string: "https://game.example.com/index?game=29#before")!
+        var reload = URLRequest(url: URL(string: "https://game.example.com/index?game=29#after")!)
+        reload.httpMethod = "GET"
+        XCTAssertTrue(WebNavigationPolicy.isCurrentDocumentGET(reload, currentURL: current))
+        reload.httpMethod = "POST"
+        XCTAssertFalse(WebNavigationPolicy.isCurrentDocumentGET(reload, currentURL: current))
     }
     func testHeadersBeforeAndAfterConsent() async {
         let (sut, _, vault, backend) = make()

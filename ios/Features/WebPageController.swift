@@ -12,11 +12,47 @@ enum BridgeCallbackScript {
     }
 }
 
+/// 仅供 audio-recovery.js 监听的原生生命周期信号；不属于对 H5 公开的 Bridge 或方向协议。
+enum NativeAudioLifecycleScript {
+    static let eventName = "__qsmAudioLifecycle"
+
+    static func make(state: String) -> String? {
+        guard ["background", "foreground"].contains(state) else { return nil }
+        let message: [String: Any] = ["state": state]
+        guard let encoded = try? JSONSerialization.data(withJSONObject: message, options: [.sortedKeys]),
+              let json = String(data: encoded, encoding: .utf8) else { return nil }
+        return "window.dispatchEvent(new CustomEvent(\"\(eventName)\",{detail:\(json)}));"
+    }
+}
+
+enum WebAudioRecoveryScript {
+    static func shouldInject(audioControl: Bool, pageInstance: String) -> Bool {
+        audioControl && pageInstance == "web_game"
+    }
+
+    static func makeUserScript(source: String) -> WKUserScript {
+        // 默认 page world 才能包装 iframe 页面实际使用的 AudioContext。
+        WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+    }
+}
+
 private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     weak var owner: WebPageController?
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         owner?.receive(message)
     }
+}
+
+@MainActor private final class ExternalPopupNavigationDelegate: NSObject, WKNavigationDelegate {
+    weak var owner: WebPageController?
+    let id: UUID
+    init(id: UUID, owner: WebPageController) { self.id = id; self.owner = owner }
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let owner else { decisionHandler(.cancel); return }
+        owner.decidePopupNavigation(id: id, webView: webView, action: action, decisionHandler: decisionHandler)
+    }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { owner?.discardPopupSoon(id: id) }
 }
 
 @MainActor final class WebPageController: UIViewController, WKNavigationDelegate, WKUIDelegate {
@@ -35,17 +71,34 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     private var timeout: Task<Void, Never>?
     private var failureView: UIView?
     private let script: String
+    private let audioRecoveryScript: String?
+    private let audioControlEnabled: Bool
     private let handler = WeakMessageHandler()
     var onContentReady: (() -> Void)?
     var onTerminalFailure: (() -> Void)?
     private var revealed = false
     private var awaitingInitialPolicy = false
+    private struct PendingPopup {
+        let webView: WKWebView
+        let delegate: ExternalPopupNavigationDelegate
+        let timeout: Task<Void, Never>
+    }
+    private var pendingPopups: [UUID: PendingPopup] = [:]
 
-    init(spec: PageSpec, coordinator: AppCoordinator) throws {
+    init(spec: PageSpec, coordinator: AppCoordinator, audioControlEnabled: Bool = false) throws {
         self.spec = spec; self.instance = spec.instance; self.trustedURL = spec.url
         self.currentRequest = URLRequest(url: spec.url); self.sessionEpoch = coordinator.epoch; self.coordinator = coordinator
         guard let file = Bundle.main.url(forResource: "bridge", withExtension: "js") else { throw QSMError.invalid("缺少 Bridge 资源") }
         self.script = try String(contentsOf: file, encoding: .utf8)
+        self.audioControlEnabled = audioControlEnabled
+        if audioControlEnabled {
+            guard let file = Bundle.main.url(forResource: "audio-recovery", withExtension: "js") else {
+                throw QSMError.invalid("缺少音频恢复资源")
+            }
+            self.audioRecoveryScript = try String(contentsOf: file, encoding: .utf8)
+        } else {
+            self.audioRecoveryScript = nil
+        }
         super.init(nibName: nil, bundle: nil)
         handler.owner = self
     }
@@ -53,6 +106,8 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     override func loadView() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
+        // 与 Android WebView 行为一致；所有新窗口仍须经过 jumpDomain 复验，空窗口也受数量和超时限制。
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
         config.userContentController.add(handler, name: "qsm")
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self; webView.uiDelegate = self
@@ -91,6 +146,9 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         documentID = UUID().uuidString; seenIDs.removeAll(); hideUntilReady()
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
+        if let audioRecoveryScript {
+            controller.addUserScript(WebAudioRecoveryScript.makeUserScript(source: audioRecoveryScript))
+        }
         let viewport = """
         (function(){
           function apply(){
@@ -129,9 +187,26 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
     func invalidate() {
         guard active else { return }
         active = false; documentID = UUID().uuidString; timeout?.cancel()
+        for id in Array(pendingPopups.keys) { discardPopup(id: id) }
         webView?.stopLoading(); webView?.configuration.userContentController.removeScriptMessageHandler(forName: "qsm")
         webView?.configuration.userContentController.removeAllUserScripts()
         webView?.navigationDelegate = nil; webView?.uiDelegate = nil
+    }
+    private func evaluateInTrustedCurrentDocument(_ script: String) {
+        guard active, webView != nil, let currentURL = webView.url,
+              Origin(currentURL) == Origin(trustedURL) else { return }
+        webView.evaluateJavaScript(script, completionHandler: nil)
+    }
+    /// Web 内容进程仍可执行脚本的最后时机；只在 audioControl 已开启的游戏页发送内部后台信号。
+    func applicationWillResignActive() {
+        guard audioControlEnabled, let script = NativeAudioLifecycleScript.make(state: "background") else { return }
+        evaluateInTrustedCurrentDocument(script)
+    }
+    /// 在 Scene 真正回到 active 后，仅向 audio-recovery.js 发送内部前台信号。
+    /// 音频脚本会把信号限定转发至 #game_if 及其子 frame，不向外层 H5 派发 DOM 通知。
+    func applicationDidBecomeActive() {
+        guard audioControlEnabled, let script = NativeAudioLifecycleScript.make(state: "foreground") else { return }
+        evaluateInTrustedCurrentDocument(script)
     }
     fileprivate func receive(_ message: WKScriptMessage) {
         guard active, message.webView === webView, message.frameInfo.isMainFrame,
@@ -165,20 +240,83 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
             }
         }
     }
+    private func jumpHosts(from coordinator: AppCoordinator) -> Set<String> {
+        coordinator.configuration?.jumpHosts ?? []
+    }
+    private func isBlankPopupBootstrap(_ url: URL) -> Bool {
+        url.absoluteString.isEmpty || url.absoluteString.caseInsensitiveCompare("about:blank") == .orderedSame
+    }
+    private func openExternalBrowser(_ url: URL, coordinator: AppCoordinator) {
+        guard WebNavigationPolicy.externalBrowserAllows(url, jumpHosts: jumpHosts(from: coordinator)) else { return }
+        // 外部浏览器属于另一个应用/Scene。这里不修改游戏的 requestedMode，返回游戏后继续使用离开前的方向。
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+    private func makePendingPopup(configuration: WKWebViewConfiguration) -> WKWebView? {
+        guard pendingPopups.count < 4 else { return nil }
+        // 新窗口只用于捕获 window.open() 后续目标，不继承主页面 Bridge 脚本或消息处理器。
+        configuration.userContentController = WKUserContentController()
+        let popup = WKWebView(frame: .zero, configuration: configuration)
+        let id = UUID(), delegate = ExternalPopupNavigationDelegate(id: id, owner: self)
+        popup.navigationDelegate = delegate
+        let timeout = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+            self?.discardPopup(id: id)
+        }
+        pendingPopups[id] = PendingPopup(webView: popup, delegate: delegate, timeout: timeout)
+        return popup
+    }
+    fileprivate func decidePopupNavigation(id: UUID, webView: WKWebView, action: WKNavigationAction,
+                                           decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard active, let pending = pendingPopups[id], pending.webView === webView,
+              action.targetFrame?.isMainFrame != false, let url = action.request.url,
+              let coordinator else {
+            decisionHandler(.cancel); discardPopupSoon(id: id); return
+        }
+        if isBlankPopupBootstrap(url) { decisionHandler(.allow); return }
+        let disposition = WebNavigationPolicy.newWindowDisposition(url: url, jumpHosts: jumpHosts(from: coordinator))
+        decisionHandler(.cancel)
+        if disposition == .externalBrowser { openExternalBrowser(url, coordinator: coordinator) }
+        discardPopupSoon(id: id)
+    }
+    fileprivate func discardPopupSoon(id: UUID) {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            self?.discardPopup(id: id)
+        }
+    }
+    private func discardPopup(id: UUID) {
+        guard let pending = pendingPopups.removeValue(forKey: id) else { return }
+        pending.timeout.cancel(); pending.webView.stopLoading()
+        pending.webView.navigationDelegate = nil; pending.webView.uiDelegate = nil
+        pending.webView.configuration.userContentController.removeAllUserScripts()
+    }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard active, let url = action.request.url, let coordinator = coordinator else { decisionHandler(.cancel); return }
+        let jumpHosts = jumpHosts(from: coordinator)
+        if action.targetFrame == nil {
+            let disposition = WebNavigationPolicy.newWindowDisposition(url: url, jumpHosts: jumpHosts)
+            // about:blank 只用于承接 window.open() 后续赋值；其他新窗口必须已命中外链白名单。
+            decisionHandler(disposition == .externalBrowser || isBlankPopupBootstrap(url) ? .allow : .cancel)
+            return
+        }
         if action.targetFrame?.isMainFrame == false {
             decisionHandler(coordinator.policy.allows(url) ? .allow : .cancel); return
         }
-        guard coordinator.policy.accepts(source: url, trusted: trustedURL, isMainFrame: true), action.targetFrame != nil else {
+        let disposition = WebNavigationPolicy.mainFrameDisposition(
+            url: url,
+            trustedURL: trustedURL,
+            pagePolicy: coordinator.policy,
+            jumpHosts: jumpHosts,
+            isInitialNavigation: awaitingInitialPolicy,
+            isCurrentDocumentGET: WebNavigationPolicy.isCurrentDocumentGET(action.request, currentURL: webView.url)
+        )
+        if disposition == .externalBrowser {
             decisionHandler(.cancel)
-            if action.navigationType == .linkActivated, coordinator.policy.allows(url),
-               coordinator.configuration?.jumpHosts.contains(url.host?.lowercased() ?? "") == true {
-                UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            }
+            openExternalBrowser(url, coordinator: coordinator)
             return
         }
+        guard disposition == .webView else { decisionHandler(.cancel); return }
         currentRequest = action.request
         if awaitingInitialPolicy { awaitingInitialPolicy = false } else { prepareDocument() }
         decisionHandler(.allow)
@@ -241,5 +379,12 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
         failureView?.removeFromSuperview(); failureView = stack
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
-                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
+                 for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        guard active, action.targetFrame == nil, let url = action.request.url, let coordinator else { return nil }
+        if WebNavigationPolicy.newWindowDisposition(url: url, jumpHosts: jumpHosts(from: coordinator)) == .externalBrowser {
+            openExternalBrowser(url, coordinator: coordinator)
+            return nil
+        }
+        return isBlankPopupBootstrap(url) ? makePendingPopup(configuration: configuration) : nil
+    }
 }

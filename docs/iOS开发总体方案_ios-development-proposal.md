@@ -248,7 +248,7 @@ HTTP 非 2xx、缺少 code、code 类型错误、Token 缺失或空白均不能�
 - WKScriptMessage 的 frameInfo.isMainFrame、securityOrigin、当前 WebView 对象、document/navigation 代次、sessionEpoch 共同校验；即使注入逻辑被绕过，原生入口仍拒绝越权。
 - 默认生产只用 HTTPS；来源精确匹配协议、主机与端口。配置域名、游戏导航域名、jumpDomain 和应用外链白名单分别管理。跨域跳转不继承 Bridge 权限。
 - 心跳运营页面只信任初始获准来源，不允许用功能实例名提升权限。普通动态窗口不自动获得 Bridge。
-- target=_blank / window.open 只在用户触发且命中外链白名单时用系统浏览器打开；不为外部页面复用高权限 WebView。
+- 主 frame、target=_blank / window.open 统一在目标命中 `jumpDomain` 外链白名单时用系统默认浏览器打开；`window.open()` 的空窗口只用无 Bridge 临时 WebView 捕获后续目标，不为外部页面复用高权限 WebView。
 - 普通页面导航、重定向、新窗口与外部 Scheme 均经过统一导航拦截；按既有规则判定容器内加载、获准外部打开或拒绝。H5 充值相关地址遵循相同规则；未获准目标保持拦截，不能因业务用途放行，也不自动加入白名单。
 - 页面关闭立即移除处理器、定时器和实例身份；使用弱引用消息转发器，避免 WKUserContentController 与 VC 互相持有。
 

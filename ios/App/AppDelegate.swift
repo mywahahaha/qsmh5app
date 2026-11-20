@@ -81,8 +81,14 @@ import UIKit
     }
     func sceneDidEnterBackground(_ scene: UIScene) { root?.coordinator.enteredBackground() }
     func sceneWillEnterForeground(_ scene: UIScene) { root?.coordinator.enteredForeground() }
-    func sceneWillResignActive(_ scene: UIScene) { root?.setApplicationActive(false) }
-    func sceneDidBecomeActive(_ scene: UIScene) { root?.setApplicationActive(true) }
+    func sceneWillResignActive(_ scene: UIScene) {
+        root?.applicationWillResignActive()
+        root?.setApplicationActive(false)
+    }
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        root?.setApplicationActive(true)
+        root?.applicationDidBecomeActive()
+    }
     func windowScene(_ windowScene: UIWindowScene, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         supportedInterfaceOrientations
     }

@@ -24,6 +24,7 @@ Android 已按 Native 方式完成福利大厅横屏打开、关闭后方向事�
 
 - Native 可为 `getWelfareInfo` 临时保存大厅 `entryMode`，但不使用它自动恢复方向。
 - 不发送 `screenChange` 或其他私有方向事件。
+- iOS 前后台恢复不向 H5 暴露生命周期 DOM 通知；开启 `audioControl` 的游戏由容器自动处理 iframe 音频恢复，不能用于方向布局适配。
 - `closePage`、`closeMiniWindow` 不负责旋转屏幕。
 - `closePage`、`closeMiniWindow` 不消费或加载待处理游戏地址。
 - 不重建已有 `web_game` WKWebView；切换游戏地址继续复用原实例。

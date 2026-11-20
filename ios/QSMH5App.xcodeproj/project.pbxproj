@@ -31,6 +31,7 @@
 		901FB39DD8967FC3EAE90C2F /* WebPageController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F96DDC039B4C9CDE1CDE60DF /* WebPageController.swift */; };
 		90F7B5A14E9F0B61623EF2DA /* StartupAssetsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B56A717E78132F80908935 /* StartupAssetsTests.swift */; };
 		97ED291FE8C145324831AC1F /* bridge.js in Resources */ = {isa = PBXBuildFile; fileRef = 626B2C403035FF379A0D6044 /* bridge.js */; };
+		ABF10A0E2119000012345678 /* audio-recovery.js in Resources */ = {isa = PBXBuildFile; fileRef = ABF10A0F2119000012345678 /* audio-recovery.js */; };
 		A049C2893D423C4202654FEE /* OnekeyAuthAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = F393ED39556A448609663580 /* OnekeyAuthAppearance.swift */; };
 		A454F86EEA304939444F519B /* StartupAssetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5FB8600DCDC526C334B24B /* StartupAssetsView.swift */; };
 		A5291BCEB2142148E4985D50 /* AuthBrand in Resources */ = {isa = PBXBuildFile; fileRef = BDA99A1C4C843C56EF4292D3 /* AuthBrand */; };
@@ -96,6 +97,7 @@
 		94E6089FF65C5CC4D38256C9 /* Debug-Local.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = "Debug-Local.xcconfig"; sourceTree = "<group>"; };
 		9FA2BB8C651DD697615E339B /* Base.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		A4B56A717E78132F80908935 /* StartupAssetsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = StartupAssetsTests.swift; sourceTree = "<group>"; };
+		ABF10A0F2119000012345678 /* audio-recovery.js */ = {isa = PBXFileReference; includeInIndex = 1; path = "audio-recovery.js"; sourceTree = "<group>"; };
 		B5B6A45FC8E0B97E1ABFFCC5 /* APIClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		B7D2840366C4E7EA0BA3EE31 /* packCode */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; path = packCode; sourceTree = "<group>"; };
 		BAB7C27597854E1169638110 /* Models.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -216,6 +218,7 @@
 				64B63D4317DB0C7D67FD8CBE /* PrivacyInfo.xcprivacy */,
 				776EB29A2BF3FB2B2EEE3BC0 /* StartupImages */,
 				626B2C403035FF379A0D6044 /* bridge.js */,
+				ABF10A0F2119000012345678 /* audio-recovery.js */,
 				B7D2840366C4E7EA0BA3EE31 /* packCode */,
 				163515F0C9CE5A680CD1816F /* packaging-manifest.json */,
 				F6310D57AED627A7D92BCF5B /* startup-splashes.json */,
@@ -386,6 +389,7 @@
 				4FA3C0B36624C2608D7E426C /* PrivacyInfo.xcprivacy in Resources */,
 				7D4B3F39E066FF1989A372CA /* StartupImages in Resources */,
 				97ED291FE8C145324831AC1F /* bridge.js in Resources */,
+				ABF10A0E2119000012345678 /* audio-recovery.js in Resources */,
 				8FB5A454BDD16C2D100CA2DC /* packCode in Resources */,
 				BD865EDC5B0602C77977F0A1 /* packaging-manifest.json in Resources */,
 				2BCEEA744E64002A7769E7A6 /* startup-splashes.json in Resources */,

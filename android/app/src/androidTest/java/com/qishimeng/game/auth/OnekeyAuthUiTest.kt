@@ -46,6 +46,7 @@ class OnekeyAuthUiTest {
         assertEquals(Color.WHITE, ui.webNavTextColor)
         assertFalse("协议仍需由用户勾选", ui.isPrivacyState)
         assertFalse(ui.isCheckboxHidden)
+        assertTrue("SDK 底部默认协议提示必须隐藏", ui.isLogBtnToastHidden)
 
         val resource = activityRule.activity.resources.getIdentifier(ui.pageBackgroundPath, "drawable", activityRule.activity.packageName)
         assertTrue("弹窗背景资源必须有效", resource != 0)
@@ -99,6 +100,11 @@ class OnekeyAuthUiTest {
         var closeCount = 0
         var managerId = 0
         lateinit var manager: Any
+        lateinit var loginButton: View
+        lateinit var beforePrompt: Bitmap
+        lateinit var showingPrompt: Bitmap
+        val checkAuthPageUiLegal = LoginAuthActivity::class.java
+            .getDeclaredMethod("checkAuthPageUILegal").apply { isAccessible = true }
         onMain {
             activity.host.setBackgroundColor(Color.WHITE)
             helper = PhoneNumberAuthHelper.getInstance(activity, object : TokenResultListener {
@@ -145,6 +151,8 @@ class OnekeyAuthUiTest {
                 val switch = texts.single { it.text.toString() == "使用其他方式登录" }
                 val protocol = texts.single { it.text.toString().contains("用户注册协议与隐私政策") }
                 val checkbox = descendants(root).filterIsInstance<CheckBox>().single()
+                loginButton = generateSequence(button as View?) { it.parent as? View }
+                    .first { it.hasOnClickListeners() }
                 assertFalse(checkbox.isChecked)
                 val x = protocol.paddingLeft + protocol.layout.getPrimaryHorizontal(2)
                 val y = protocol.paddingTop + (protocol.layout.getLineTop(0) + protocol.layout.getLineBottom(0)) / 2f
@@ -172,6 +180,31 @@ class OnekeyAuthUiTest {
                 assertEquals("协议不能省略尾部文字", protocol.text.length, protocol.layout.getLineEnd(protocol.lineCount - 1))
                 assertEquals("SDK 实际宽度应使用接口比例", ui.dialogWidth * activity.resources.displayMetrics.density, header.width.toFloat(), 3f)
                 assertEquals("实际窗口遮罩必须为 45%", 0.45f, auth.window.attributes.dimAmount, 0.001f)
+                assertTrue("显示提示前 SDK 页面结构必须合法", checkAuthPageUiLegal.invoke(auth) as Boolean)
+                beforePrompt = centerSnapshot(root)
+            }
+            onMain {
+                loginButton.performClick()
+            }
+            instrumentation.waitForIdleSync()
+            SystemClock.sleep(50) // 等待动态添加的提示完成首次测量与布局。
+            onMain {
+                showingPrompt = centerSnapshot(auth.window.decorView)
+                assertTrue("点击后屏幕中央必须绘制协议提示",
+                    differentPixels(beforePrompt, showingPrompt) > beforePrompt.width * beforePrompt.height / 20)
+                assertTrue("提示绘制层不能触发 SDK 的页面遮挡检测", checkAuthPageUiLegal.invoke(auth) as Boolean)
+                loginButton.performClick()
+            }
+            SystemClock.sleep(1_000)
+            onMain {
+                val afterPrompt = centerSnapshot(auth.window.decorView)
+                val shownDifference = differentPixels(beforePrompt, showingPrompt)
+                val afterDifference = differentPixels(beforePrompt, afterPrompt)
+                assertTrue("提示显示 1000ms 后屏幕中央必须恢复",
+                    afterDifference < shownDifference / 4)
+                beforePrompt.recycle()
+                showingPrompt.recycle()
+                afterPrompt.recycle()
             }
             val screenshot = instrumentation.uiAutomation.takeScreenshot()
             val file = File("/sdcard/Download", "qsm-onekey-dialog-$heightPercent.png")
@@ -231,6 +264,30 @@ class OnekeyAuthUiTest {
 
     private fun descendants(view: View): List<View> = listOf(view) +
         if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+
+    private fun centerSnapshot(view: View): Bitmap {
+        val density = view.resources.displayMetrics.density
+        val width = minOf(view.width, (300 * density).toInt()).coerceAtLeast(1)
+        val height = minOf(view.height, (80 * density).toInt()).coerceAtLeast(1)
+        val left = (view.width - width) / 2
+        val top = (view.height - height) / 2
+        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+            Canvas(bitmap).apply {
+                translate(-left.toFloat(), -top.toFloat())
+                view.draw(this)
+            }
+        }
+    }
+
+    private fun differentPixels(first: Bitmap, second: Bitmap): Int {
+        require(first.width == second.width && first.height == second.height)
+        val size = first.width * first.height
+        val firstPixels = IntArray(size)
+        val secondPixels = IntArray(size)
+        first.getPixels(firstPixels, 0, first.width, 0, 0, first.width, first.height)
+        second.getPixels(secondPixels, 0, second.width, 0, 0, second.width, second.height)
+        return firstPixels.indices.count { firstPixels[it] != secondPixels[it] }
+    }
 
     private fun buildConfig(config: OnekeyConfig): AuthUIConfig {
         val method = AliyunAuthAdapter::class.java.getDeclaredMethod("buildUiConfig", Activity::class.java, OnekeyConfig::class.java)

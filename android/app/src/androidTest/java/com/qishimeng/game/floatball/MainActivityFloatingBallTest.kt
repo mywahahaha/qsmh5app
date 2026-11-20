@@ -1,5 +1,8 @@
 package com.qishimeng.game.floatball
 
+import android.app.Instrumentation
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
@@ -69,6 +72,7 @@ class MainActivityFloatingBallTest {
     private var exchangeSucceeds = true
     private val initRequests = AtomicInteger()
     private val tokenRequests = AtomicInteger()
+    private val gameRequests = AtomicInteger()
     private val authAttempts = AtomicInteger()
     private var authCompletion: ((OnekeyAuthResult) -> Unit)? = null
     private var receivedAuthConfig: OnekeyConfig? = null
@@ -488,6 +492,56 @@ class MainActivityFloatingBallTest {
         assertBallPixel(Color.GREEN)
     }
 
+    @Test fun externalBrowserReturnKeepsLandscapeGameWebViewAndBallPosition() {
+        launchSavedTokenGame()
+        val game = awaitWeb("game")
+        val filter = IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("https") }
+        val browserMonitor = instrumentation.addMonitor(
+            filter,
+            Instrumentation.ActivityResult(0, null),
+            true
+        )
+        try {
+            val expectedLeft = 48
+            val expectedTop = 64
+            var originalOrientation = 0
+            onMain {
+                val image = ball()!!
+                image.layoutParams = (image.layoutParams as FrameLayout.LayoutParams).apply {
+                    leftMargin = expectedLeft
+                    topMargin = expectedTop
+                }
+                originalOrientation = activityRule.activity.requestedOrientation
+            }
+            awaitMain("测试前应完成悬浮球定位") {
+                ball()?.left == expectedLeft && ball()?.top == expectedTop
+            }
+            onMain {
+                MainActivity::class.java.getDeclaredMethod("openExternalUrl", String::class.java)
+                    .apply { isAccessible = true }
+                    .invoke(activityRule.activity, "https://www.baidu.com/")
+                assertEquals(originalOrientation, activityRule.activity.requestedOrientation)
+                instrumentation.callActivityOnPause(activityRule.activity)
+                ball()!!.layoutParams = (ball()!!.layoutParams as FrameLayout.LayoutParams).apply {
+                    leftMargin = 0
+                    topMargin = 0
+                }
+                instrumentation.callActivityOnResume(activityRule.activity)
+            }
+            awaitMain("返回游戏后应恢复外链前的悬浮球坐标") {
+                browserMonitor.hits == 1 &&
+                    ball()?.left == expectedLeft && ball()?.top == expectedTop
+            }
+            onMain {
+                assertEquals(originalOrientation, activityRule.activity.requestedOrientation)
+                assertSame("返回游戏不能重建游戏 WebView", game, container().get("web_game")?.webView)
+                assertEquals("返回游戏不能重新请求游戏页面", 1, gameRequests.get())
+            }
+        } finally {
+            instrumentation.removeMonitor(browserMonitor)
+        }
+    }
+
     @Test fun fractionalTopWinsOverBottomInActualView() {
         ballTop = 0.2
         ballBottom = 200
@@ -722,6 +776,7 @@ class MainActivityFloatingBallTest {
         val path = reader.readLine().orEmpty().split(' ').getOrNull(1).orEmpty()
         while (!reader.readLine().isNullOrEmpty()) { }
         if (path == "/game") {
+            gameRequests.incrementAndGet()
             gameRequested.countDown()
             releaseGame.await(15, TimeUnit.SECONDS)
         }

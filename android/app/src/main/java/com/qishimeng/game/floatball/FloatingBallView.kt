@@ -91,6 +91,20 @@ class FloatingBallView(
         loadImage(if (isActive) config.imageActive else config.imageDefault)
     }
 
+    internal fun capturePosition(): FloatingBallPosition {
+        val params = image.layoutParams as FrameLayout.LayoutParams
+        return FloatingBallPosition(params.leftMargin, params.topMargin)
+    }
+
+    internal fun restorePosition(position: FloatingBallPosition) {
+        val params = image.layoutParams as FrameLayout.LayoutParams
+        val width = image.width.takeIf { it > 0 } ?: params.width
+        val height = image.height.takeIf { it > 0 } ?: params.height
+        params.leftMargin = position.leftMargin.coerceIn(0, (host.width - width).coerceAtLeast(0))
+        params.topMargin = position.topMargin.coerceIn(0, (host.height - height).coerceAtLeast(0))
+        image.layoutParams = params
+    }
+
     fun destroy() {
         requestedVisible = false
         showGeneration++
@@ -156,3 +170,5 @@ class FloatingBallView(
         const val CLICK_SLOP_PX = 8f
     }
 }
+
+internal data class FloatingBallPosition(val leftMargin: Int, val topMargin: Int)

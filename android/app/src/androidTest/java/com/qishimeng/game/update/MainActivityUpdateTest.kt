@@ -3,7 +3,6 @@ package com.qishimeng.game.update
 import android.app.Instrumentation
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.ActivityInfo
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -120,23 +119,31 @@ class MainActivityUpdateTest {
         assertNull(intent.selector)
     }
 
-    @Test fun externalBrowserTemporarilyRequestsPortraitAndRestoresOriginalOrientationOnReturn() {
+    @Test fun externalBrowserNeverChangesGameOrientationOrReloadsH5OnReturn() {
         enabled = 0
         launch()
         await("登录页面应加载") { logins.get() == 1 }
         val filter = IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("https") }
         monitor = instrumentation.addMonitor(filter, Instrumentation.ActivityResult(0, null), true)
+        lateinit var loginWebView: WebView
+        var loginUrl: String? = null
         var original = 0
         instrumentation.runOnMainSync {
+            loginWebView = findWeb(rule.activity.findViewById(android.R.id.content))!!
+            loginUrl = loginWebView.url
             original = rule.activity.requestedOrientation
             MainActivity::class.java.getDeclaredMethod("openExternalUrl", String::class.java).apply { isAccessible = true }
                 .invoke(rule.activity, "https://www.baidu.com/")
-            assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, rule.activity.requestedOrientation)
+            assertEquals(original, rule.activity.requestedOrientation)
         }
         instrumentation.runOnMainSync {
             instrumentation.callActivityOnPause(rule.activity)
             instrumentation.callActivityOnResume(rule.activity)
             assertEquals(original, rule.activity.requestedOrientation)
+            val resumedWebView = findWeb(rule.activity.findViewById(android.R.id.content))
+            assertSame("返回游戏不能重建 H5 WebView", loginWebView, resumedWebView)
+            assertEquals("返回游戏不能改变 H5 地址", loginUrl, resumedWebView?.url)
+            assertEquals("返回游戏不能重新请求 H5 页面", 1, logins.get())
         }
     }
 

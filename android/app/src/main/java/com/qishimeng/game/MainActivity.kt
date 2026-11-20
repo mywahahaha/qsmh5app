@@ -1,7 +1,6 @@
 package com.qishimeng.game
 
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
@@ -47,6 +46,7 @@ import com.qishimeng.game.device.ScreenMode
 import com.qishimeng.game.device.ScreenModeController
 import com.qishimeng.game.device.WelfareScreenModeSession
 import com.qishimeng.game.floatball.FloatingBallController
+import com.qishimeng.game.floatball.FloatingBallPosition
 import com.qishimeng.game.floatball.FloatingBallView
 import com.qishimeng.game.network.ApiClient
 import com.qishimeng.game.network.HeartbeatResponse
@@ -103,9 +103,8 @@ class MainActivity : AppCompatActivity() {
     private var updateChecked = false
     private var updateService: UpdateService? = null
     private var updateInstaller: ApkInstaller? = null
-    private var externalBrowserOrientation: Int? = null
-    private var pausedForExternalBrowser = false
-    private var externalBrowserLaunched = false
+    private var externalBrowserLaunchPending = false
+    private var externalBrowserBallState: ExternalBrowserBallState? = null
     private var pendingHostLayoutListener: View.OnLayoutChangeListener? = null
     private var pendingWelfareClose: PendingWelfareClose? = null
     private var pendingLogoutOrientation: Int? = null
@@ -190,15 +189,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (pausedForExternalBrowser) restoreExternalBrowserOrientation()
+        externalBrowserLaunchPending = false
         if (::networkGate.isInitialized) networkGate.onResume()
         updateInstaller?.onResume()
         webContainer?.onResume()
-    }
-
-    override fun onPause() {
-        if (externalBrowserLaunched) pausedForExternalBrowser = true
-        super.onPause()
+        restoreExternalBrowserBallPosition()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -731,25 +726,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openExternalUrl(url: String) {
-        if (externalBrowserOrientation != null) return
-        externalBrowserOrientation = requestedOrientation
-        pausedForExternalBrowser = false
-        externalBrowserLaunched = true
+        if (externalBrowserLaunchPending) return
+        externalBrowserLaunchPending = true
+        externalBrowserBallState = floatingBall?.let { ball ->
+            ExternalBrowserBallState(ball, ball.capturePosition())
+        }
         runCatching {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             startActivity(createExternalBrowserIntent(url))
         }.onFailure {
-            restoreExternalBrowserOrientation()
+            externalBrowserLaunchPending = false
+            externalBrowserBallState = null
             Toast.makeText(this, "无法使用浏览器打开链接", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun restoreExternalBrowserOrientation() {
-        val previous = externalBrowserOrientation ?: return
-        externalBrowserOrientation = null
-        pausedForExternalBrowser = false
-        externalBrowserLaunched = false
-        requestedOrientation = previous
+    private fun restoreExternalBrowserBallPosition() {
+        val state = externalBrowserBallState ?: return
+        externalBrowserBallState = null
+        val orientation = resources.configuration.orientation
+        if (orientation != Configuration.ORIENTATION_LANDSCAPE &&
+            orientation != Configuration.ORIENTATION_PORTRAIT) return
+        runWhenHostMatchesOrientation(orientation) {
+            if (floatingBall === state.ball) state.ball.restorePosition(state.position)
+        }
     }
 
     private fun showMessage(message: String) {
@@ -769,6 +768,11 @@ class MainActivity : AppCompatActivity() {
 private data class PendingWelfareClose(
     val orientation: Int,
     val gameUrl: String?
+)
+
+private data class ExternalBrowserBallState(
+    val ball: FloatingBallView,
+    val position: FloatingBallPosition
 )
 
 internal fun createExternalBrowserIntent(url: String): Intent =

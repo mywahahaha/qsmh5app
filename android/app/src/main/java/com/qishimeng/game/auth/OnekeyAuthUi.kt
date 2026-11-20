@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
+import android.widget.FrameLayout
 import com.mobile.auth.gatewayauth.AuthRegisterXmlConfig
 import com.mobile.auth.gatewayauth.AuthUIConfig
 import com.mobile.auth.gatewayauth.PhoneNumberAuthHelper
@@ -12,6 +13,7 @@ import com.mobile.auth.gatewayauth.ResultCode
 import com.mobile.auth.gatewayauth.ui.AbstractPnsViewDelegate
 import com.qishimeng.game.R
 import com.qishimeng.game.web.FullscreenViewport
+import java.lang.ref.WeakReference
 import kotlin.math.ceil
 
 /** 保留 SDK 的认证与协议控件，仅配置位置、样式和品牌头部。所有 SDK 尺寸参数为 dp。 */
@@ -75,6 +77,7 @@ object OnekeyAuthUi {
             .setLogBtnMarginLeftAndRight(0)
             .setLogBtnHeight(buttonHeight)
             .setLogBtnOffsetY((buttonY - SDK_BODY_TOP_DP).coerceAtLeast(0))
+            .setLogBtnToastHidden(true)
             .setSwitchAccHidden(false)
             .setSwitchAccText(config.otherLoginText)
             .setSwitchAccTextColor(Color.rgb(102, 102, 102))
@@ -109,11 +112,21 @@ object OnekeyAuthUi {
     }
 
     fun configureHeader(helper: PhoneNumberAuthHelper, onClose: () -> Unit) {
+        var headerView: WeakReference<View>? = null
+        var privacyPrompt: OnekeyPrivacyPrompt? = null
         helper.expandAuthPageCheckedScope(true)
         helper.removeAuthRegisterViewConfig()
         helper.removeAuthRegisterXmlConfig()
         // userControlAuthPageCancel 的系统返回事件只发往 UI 监听器。
-        helper.setUIClickListener { code, _, _ ->
+        helper.setUIClickListener { code, _, data ->
+            if (code == ResultCode.CODE_ERROR_USER_LOGIN_BTN && privacyPrompt == null) {
+                privacyPrompt = headerView?.get()
+                    ?.takeIf { it.isAttachedToWindow }
+                    ?.rootView
+                    ?.let { it as? FrameLayout }
+                    ?.let(::OnekeyPrivacyPrompt)
+            }
+            privacyPrompt?.onUiClick(code, data)
             if (code == ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYKEY ||
                 code == ResultCode.CODE_ERROR_USER_CONTROL_CANCEL_BYBTN ||
                 code == ResultCode.CODE_ERROR_USER_SWITCH
@@ -122,6 +135,8 @@ object OnekeyAuthUi {
         helper.addAuthRegisterXmlConfig(AuthRegisterXmlConfig.Builder()
             .setLayout(R.layout.onekey_auth_header, object : AbstractPnsViewDelegate() {
                 override fun onViewCreated(view: View) {
+                    headerView = WeakReference(view)
+                    privacyPrompt = null
                     view.findViewById<View>(R.id.onekey_close).setOnClickListener { onClose() }
                 }
             }).build())

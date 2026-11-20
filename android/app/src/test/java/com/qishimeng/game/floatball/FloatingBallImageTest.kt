@@ -124,6 +124,25 @@ class FloatingBallImageTest {
         assertFalse("切回 PNG 后旧 GIF 必须停止", previous.isRunning)
     }
 
+    @Test fun capturedPositionCanBeRestoredAfterHostRelayout() {
+        val image = host.getChildAt(0) as ImageView
+        image.layoutParams = (image.layoutParams as FrameLayout.LayoutParams).apply {
+            leftMargin = 48
+            topMargin = 64
+        }
+        host.layout(0, 0, 600, 400)
+        val position = ball.capturePosition()
+
+        host.layout(0, 0, 400, 700)
+        host.layout(0, 0, 600, 400)
+        ball.restorePosition(position)
+        host.layout(0, 0, 600, 400)
+
+        val restored = image.layoutParams as FrameLayout.LayoutParams
+        assertEquals(48, restored.leftMargin)
+        assertEquals(64, restored.topMargin)
+    }
+
     private fun await(condition: () -> Boolean) {
         val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
         while (System.nanoTime() < deadline) {
